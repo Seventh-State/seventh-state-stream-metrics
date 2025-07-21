@@ -1,0 +1,33 @@
+[root@ip-172-31-21-185 ec2-user]# curl 'localhost:15692/metrics/7s_streams?family=stream_metrics&family=consumers&stream_misc&family=consumer_lag'
+# TYPE telemetry_scrape_size_bytes summary
+# HELP telemetry_scrape_size_bytes Scrape size, not encoded
+telemetry_scrape_size_bytes_count{registry="7s_streams",content_type="text/plain; version=0.0.4"} 44
+telemetry_scrape_size_bytes_sum{registry="7s_streams",content_type="text/plain; version=0.0.4"} 22880311
+# TYPE telemetry_scrape_duration_seconds summary
+# HELP telemetry_scrape_duration_seconds Scrape duration
+telemetry_scrape_duration_seconds_count{registry="7s_streams",content_type="text/plain; version=0.0.4"} 44
+telemetry_scrape_duration_seconds_sum{registry="7s_streams",content_type="text/plain; version=0.0.4"} 44.28418336
+# TYPE seventh_state_stream_local_offset gauge
+# HELP seventh_state_stream_local_offset Local stream counter field from osiris_counters:overview(): offset.
+seventh_state_stream_local_offset{vhost="/",stream="stream",role="writer"} 6
+# TYPE seventh_state_stream_local_committed_offset gauge
+# HELP seventh_state_stream_local_committed_offset Local stream counter field from osiris_counters:overview(): committed_offset.
+seventh_state_stream_local_committed_offset{vhost="/",stream="stream",role="writer"} 6
+# TYPE seventh_state_stream_local_readers gauge
+# HELP seventh_state_stream_local_readers Local stream counter field from osiris_counters:overview(): readers.
+seventh_state_stream_local_readers{vhost="/",stream="stream",role="writer"} 1
+# TYPE seventh_state_stream_local_first_offset gauge
+# HELP seventh_state_stream_local_first_offset Local stream counter field from osiris_counters:overview(): first_offset.
+seventh_state_stream_local_first_offset{vhost="/",stream="stream",role="writer"} 0
+# TYPE seventh_state_stream_local_first_timestamp gauge
+# HELP seventh_state_stream_local_first_timestamp Local stream counter field from osiris_counters:overview(): first_timestamp.
+seventh_state_stream_local_first_timestamp{vhost="/",stream="stream",role="writer"} 0
+# TYPE seventh_state_stream_local_segments gauge
+# HELP seventh_state_stream_local_segments Local stream counter field from osiris_counters:overview(): segments.
+seventh_state_stream_local_segments{vhost="/",stream="stream",role="writer"} 1
+# TYPE seventh_state_stream_local_consumer_offset gauge
+# HELP seventh_state_stream_local_consumer_offset Local stream counter field from osiris_counters:overview(): consumer_offset.
+seventh_state_stream_local_consumer_offset{vhost="/",stream="stream",consumer="stream.subid-0",connection_name="stream-perf-test-consumer-0",pid="<0.426291.0>",protocol="stream"} 7
+# TYPE seventh_state_stream_local_consumer_offset_lag gauge
+# HELP seventh_state_stream_local_consumer_offset_lag Consumer offset lag from rabbit_stream_consumer_created ETS table.
+seventh_state_stream_local_consumer_offset_lag{vhost="/",stream="stream",consumer="stream.subid-0",connection_name="stream-perf-test-consumer-0",pid="<0.426291.0>",protocol="stream"} 0

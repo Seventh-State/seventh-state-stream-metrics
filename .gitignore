@@ -1,5 +1,7 @@
 .sw?
 .*.sw?
+*.tmp
+*~
 *.beam
 /.erlang.mk/
 /cover/
@@ -16,8 +18,14 @@
 /xrefr
 
 *.d
+*.dump
+erl_crash.dump
+.DS_Store
 
 /user.bazelrc
 /bazel-*
 
 /.vscode/
+.idea/
+src/extension-framework
+dist

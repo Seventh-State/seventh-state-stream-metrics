@@ -1,0 +1,9 @@
+sbin/rabbitmqctl -n rabbit eval 'ets:tab2list(rabbit_stream_consumer_created).'
+[{{{resource,<<"/">>,queue,<<"stream">>},<13696.1339.0>,0},
+  [{credits,0},
+   {consumed,463},
+   {offset,463},
+   {offset_lag,8617745},
+   {active,true},
+   {activity_status,up},
+   {properties,#{}}]}]

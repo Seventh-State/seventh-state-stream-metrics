@@ -1,7 +1,8 @@
 {
   "include": [
-      { "otp": "26.2", "elixir": "1.14", "rabbitmq": "v4.1.2" },
-      { "otp": "26.2", "elixir": "1.14", "rabbitmq": "v4.0.9" },
-      { "otp": "26.0", "elixir": "1.14", "rabbitmq": "v3.13.7" }
+      { "otp": "26.2", "elixir": "1.14", "rabbitmq": "v4.2.x" },
+      { "otp": "26.2", "elixir": "1.14", "rabbitmq": "v4.1.x" },
+      { "otp": "26.2", "elixir": "1.14", "rabbitmq": "v4.0.x" },
+      { "otp": "26.0", "elixir": "1.14", "rabbitmq": "v3.13.x" }
   ]
 }

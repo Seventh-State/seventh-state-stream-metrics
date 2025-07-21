@@ -7,38 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  load-matrix:
-    uses: ./.github/workflows/load-matrix.yml
-    with:
-      file: .github/matrix.json
-
   build-release:
-    needs: load-matrix
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJson(needs.load-matrix.outputs.matrix) }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Common setup
-        uses: ./.github/actions/setup-beam
-        with:
-          otp-version: ${{ matrix.otp }}
-          elixir-version: ${{ matrix.elixir }}
-
-      - name: Build release artifact
-        run: make dist DIST_AS_EZS=1 current_rmq_ref=${{ matrix.rabbitmq }}
-
-      - name: Zip release artifact with RabbitMQ version
-        run: zip -rj seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}.zip plugins/seventh_state_hello_plugin-*.ez
-
-      - name: Upload zip artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}
-          path: seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}.zip
+    uses: ./.github/workflows/test-and-build-plugin.yml
+    secrets: inherit
 
   publish-release:
     needs: build-release
@@ -56,6 +27,13 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.tar
+            artifacts/**/*.msi
+            artifacts/**/*.tar.gz
+            artifacts/**/*.ez
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

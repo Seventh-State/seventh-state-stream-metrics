@@ -1,0 +1,103 @@
+name: Test and Build Plugin
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  load-matrix:
+    uses: ./.github/workflows/load-matrix.yml
+    with:
+      file: .github/matrix.json
+
+  test-and-build:
+    needs: load-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.load-matrix.outputs.matrix) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine package version
+        run: |
+          ref_name="${GITHUB_REF_NAME:-}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ -n "$ref_name" ]; then
+            version="$ref_name"
+          else
+            latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+            short_sha=$(git rev-parse --short HEAD)
+            if [ -n "$latest_tag" ]; then
+              version="${latest_tag}+$short_sha"
+            else
+              version="$short_sha"
+            fi
+          fi
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Set up Erlang/OTP and Elixir
+        uses: ./.github/actions/setup-beam
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+
+      - name: Configure Git for private repositories
+        uses: ./.github/actions/setup-git
+        with:
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Apply BROKER_VERSION_REQUIREMENT patch (if available)
+        run: |
+          if [ -f patches/seven_drs_${{ matrix.rabbitmq }}.patch ]; then
+            patch -p1 --verbose < patches/seven_drs_${{ matrix.rabbitmq }}.patch
+          fi
+
+      - name: Test and build plugin
+        run: |
+          make tests
+          make dist DIST_AS_EZS=1
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Upload logs on test failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seventh-state-drs-${{ env.PACKAGE_VERSION }}-rabbitmq-${{ matrix.rabbitmq }}-test-logs
+          path: logs/
+
+      - name: Archive plugin tarball
+        run: tar -czf "seventh-state-drs-${PACKAGE_VERSION}-rabbitmq-${{ matrix.rabbitmq }}.tar.gz" -C package .
+
+      - name: Upload plugin tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: seventh-state-drs-${{ env.PACKAGE_VERSION }}-rabbitmq-${{ matrix.rabbitmq }}
+          path: seventh-state-drs-${{ env.PACKAGE_VERSION }}-rabbitmq-${{ matrix.rabbitmq }}.tar.gz
+
+      - name: Build release package (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: make package
+        env:
+          BUILD_MSI: false
+          OUTPUT_NAME: "seventh-state-stream-metrics-${{ env.PACKAGE_VERSION }}-rabbitmq-${{ matrix.rabbitmq }}"
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifacts (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: seventh-state-stream-metrics-${{ env.PACKAGE_VERSION }}-rabbitmq-${{ matrix.rabbitmq }}-installers
+          path: |
+            dist/*/*.deb
+            dist/*/*.rpm
+            dist/*/*.tar
+            dist/*/*.msi
+            dist/*/*.ez
+          if-no-files-found: error

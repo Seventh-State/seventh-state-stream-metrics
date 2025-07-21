@@ -113,7 +113,14 @@ $(foreach dep,$(RABBITMQ_BUILTIN), \
 # Fetch rule for git_c dependencies
 define dep_fetch_git_c
     if [ ! -d $(DEPS_DIR)/rabbitmq_server/.git ]; then \
-        git clone -q --branch $(call query_version_git,$1) --single-branch $(call query_repo_git,$1) $(DEPS_DIR)/rabbitmq_server; \
+        git clone -q --branch $(current_rmq_ref) --single-branch $(call query_repo_git,$1) $(DEPS_DIR)/rabbitmq_server; \
+    else \
+        current_ref=$$(cd $(DEPS_DIR)/rabbitmq_server && git rev-parse --abbrev-ref HEAD); \
+        if [ "$$current_ref" != "$(current_rmq_ref)" ]; then \
+            cd $(DEPS_DIR)/rabbitmq_server && \
+                git fetch -q origin "$(current_rmq_ref)" && \
+                git checkout -q "$(current_rmq_ref)"; \
+        fi; \
     fi; \
     ln -sfn $(DEPS_DIR)/rabbitmq_server/deps/$(word 4,$(dep_$1)) $(DEPS_DIR)/$(call query_name,$1); \
     if [ "$(call query_name,$1)" = "rabbitmq_cli" ]; then \
@@ -169,4 +176,9 @@ endif
 
 # Add seshat as a build dependency for RabbitMQ 4+ workaround
 BUILD_DEPS += seshat
-dep_seshat = git https://github.com/rabbitmq/seshat v0.6.1
+ifneq ($(shell \
+  [ "$$(printf "%s\nv4.2\n$(current_rmq_ref)" | sort -V | tail -n1)" = "$(current_rmq_ref)" ] && echo ok),)
+    dep_seshat = hex 1.0.0
+else
+    dep_seshat = git https://github.com/rabbitmq/seshat v0.6.1
+endif

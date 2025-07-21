@@ -1,0 +1,13 @@
+name: Setup Git with PAT
+description: Setup Git to clone private GitHub repos with a PAT
+
+inputs:
+  token:
+    required: true
+    description: The GitHub Personal Access Token (PAT) to use for cloning private repositories.
+
+runs:
+  using: "composite"
+  steps:
+    - run: git config --global url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf "https://github.com/"
+      shell: bash

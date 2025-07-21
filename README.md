@@ -1,180 +1,89 @@
-# Seventh State Hello Plugin
+# Seventh State Stream Metrics Plugin
 
-This repository is a **template plugin** for Seventh State plugins. You can use it as a starting point for your own plugin development.
+Expose local RabbitMQ stream counters as Prometheus metrics, with a dedicated registry and scrape path.
 
-## Getting Started
+## Requirements
 
-You can choose to build and test the plugin using either:
+- RabbitMQ with the `rabbitmq_stream` plugin enabled.
+- `rabbitmq_prometheus` enabled (this plugin refuses to start without it).
 
-* **Docker Compose** (to avoid local environment issues), or
-* **Your local setup** (if you already have compatible Erlang/Elixir installed).
+## Download and Install
 
-## Build and Test Locally (Without Docker)
-
-If you prefer to work locally, make sure you have:
-
-* **Erlang/OTP 26.2**
-* **Elixir 1.14.5**
-
-These versions are compatible with most RabbitMQ versions: from `3.12.10` to `4.x`.
-
-No need to install RabbitMQ — this project can start a broker for you.
-
-## Common Makefile Commands
+1. Go to the GitHub **Releases** page for this repository and download the `.ez` file that matches your RabbitMQ version.
+2. Copy the `.ez` file into your RabbitMQ plugins directory.
+3. Enable Prometheus and this plugin:
 
 ```bash
-gmake tests                          # Run all tests (logs appear in ./logs)
-gmake run-broker                     # Start RabbitMQ broker with an interactive Erlang shell
-gmake start-cluster                  # Start a 3-node RabbitMQ cluster (customise with NODES=5)
-gmake stop-cluster                   # Stop the running cluster
-gmake dist DIST_AS_EZS=1             # Create a .ez plugin file (output in ./plugins)
-gmake ct-a_test_suite                # Run a test suite
-gmake ct-a_test_suite t="group"      # Run a test group inside the suite
-gmake ct-a_test_suite t="group:case" # Run a specific test case
+rabbitmq-plugins enable rabbitmq_prometheus
+rabbitmq-plugins enable seventh_state_stream_metrics
 ```
 
-> Test files are located in the `test/` directory.
-> If you add new plugin functionality, you should add corresponding tests there.
+To find the plugins directory on your node, run:
 
-> To install and test your `.ez` plugin on any RabbitMQ node, follow the official plugin installation guide:
-> [https://www.rabbitmq.com/plugins.html](https://www.rabbitmq.com/plugins.html)
+```bash
+rabbitmq-plugins directories
+```
 
-> For more useful commands and development guidelines, refer to the official RabbitMQ contribution guide:
-> [https://github.com/rabbitmq/rabbitmq-server/blob/main/CONTRIBUTING.md](https://github.com/rabbitmq/rabbitmq-server/blob/main/CONTRIBUTING.md)
+## Scrape Endpoint
 
-## Build and Test with Docker Compose
+- Registry: `7s_streams`
+- Endpoint: `/metrics/7s_streams`
 
-1. **Build the Docker image:**
+## Metric Families
 
-   ```bash
-   docker compose -f build/docker-compose.yml build --no-cache
-   ```
+All metrics are gauges and follow the naming rule `seventh_state_stream_local_<field>`.
 
-2. **Run tests and build the plugin:**
+### stream_metrics
 
-   ```bash
-   docker compose -f build/docker-compose.yml run --rm test-and-build make tests
-   docker compose -f build/docker-compose.yml run --rm test-and-build make dist DIST_AS_EZS=1
-   ```
+| Metric | What it shows |
+| --- | --- |
+| `seventh_state_stream_local_committed_offset` | Latest committed offset for the stream on the local node. |
+| `seventh_state_stream_local_readers` | Number of local stream readers, including replicas, amqp, and stream consumers. |
+| `seventh_state_stream_local_first_offset` | First available offset for the local stream. |
+| `seventh_state_stream_local_first_timestamp` | Timestamp of the first available record for the local stream. |
+| `seventh_state_stream_local_segments` | Number of segments in the local stream. |
 
-   > If you see a `flock`-related error like:
-   > `flock: can't open 'sbin.lock': No such file or directory`
-   > just re-run the command — it’s usually transient.
+### stream_misc
 
-3. **Test logs and build artifacts** will be available in your project root directory after the run.
+| Metric | What it shows |
+| --- | --- |
+| `seventh_state_stream_local_offset` | Current local stream offset. |
+| `seventh_state_stream_local_packets` | Packet counter from local stream counters. |
+| `seventh_state_stream_local_epoch` | Current stream epoch for the local node. |
 
-   * `logs/` – contains test logs.
-   * `plugins/` – contains the generated `.ez` plugin files.
+### consumers
 
-> This approach avoids local dependency/version issues.
+| Metric | What it shows |
+| --- | --- |
+| `seventh_state_stream_local_consumer_offset` | Per-consumer offset for stream and amqp consumers. |
 
-## Template for Plugin with Custom RabbitMQ
+### consumer_lag
 
-This repository also provides a template for developing plugins with a **custom RabbitMQ build**.
-If your plugin requires changes to the RabbitMQ source code (e.g. patching core modules), you should use the `hello-with-custom-rabbit` branch as a starting point.
-It includes everything needed to build, test, and release your plugin alongside a custom RabbitMQ version.
+| Metric | What it shows |
+| --- | --- |
+| `seventh_state_stream_local_consumer_offset_lag` | Per-consumer offset lag when available (only for stream protocol). |
 
-### Step 1: Build RabbitMQ (Custom Branch)
+## Labels
 
-1. Clone the private RabbitMQ repository:
+Stream metrics use these labels:
 
-   ```bash
-   git clone https://github.com/Seventh-State/rabbitmq-server-private.git
-   ```
-2. Create a new custom branch using the format: `<version>-<plugin-name>`
+- `vhost`
+- `stream`
+- `role` (`writer` or `replica`)
 
-   Example:
+Consumer metrics use these labels:
 
-   ```
-   v4.1.2-hello-plugin
-   ```
-3. Make your changes and push the branch to GitHub.
-4. Navigate to the **GitHub Actions** page of the plugin repository.
-5. **Trigger the Build RabbitMQ server** for your branch by selecting it from the workflow UI.
+- `vhost`
+- `stream`
+- `consumer`
+- `connection_name`
+- `pid`
+- `protocol` (`stream` or `amqp`)
 
+## Cardinality Warning
 
-### Step 2: Generate Manifest File
+If you have many streams and/or many consumers, this plugin will emit a large number of series. High cardinality can be expensive for Prometheus and RabbitMQ. Filter metric families at scrape time if you only need a subset.
 
-1. After the RabbitMQ build completes, **note the run number** of the successful build.
-2. Update the `RUN_NUMBER` in the `project.env` file to match the build run number:
+## Contributing
 
-   ```env
-   RUN_NUMBER=42
-   ```
-3. Run:
-
-   ```bash
-   gmake generate-manifest
-   ```
-
-   This will generate one manifest file **per RabbitMQ version defined** in `.github/matrix.json`, located in the `priv/` folder.
-   For example:
-
-   ```
-   priv/seven_hello_plugin_manifest_v4.1.2.json
-   priv/seven_hello_plugin_manifest_v4.0.9.json
-   ```
-4. **Manually verify the manifest**, especially the `changed_modules` list, which includes all `.beam` files that were modified.
-   Example manifest:
-
-   ```json
-   {
-     "base_rmq_ref": "v4.1.2",
-     "source_build_id": "local",
-     "changed_modules": [
-       {
-         "archive_path": "./rabbit-4.1.2+1.g4ca63cb/ebin/rabbit_quorum_queue.beam",
-         "filename": "rabbit_quorum_queue.beam",
-         "md5hash": "WUg4tPV17N7848kYq0qYrQ=="
-       }
-     ]
-   }
-   ```
-5. Once verified, commit and push the updated manifest.
-
-### Step 3: Trigger Plugin Build
-
-Commit and push your changes (e.g. the manifest update).
-   * Push your changes and open a Pull Request, **or**
-   * Manually trigger the plugin build from GitHub Actions by selecting the correct branch.
-
-No other inputs are required — the build will automatically pick up the configuration from your branch.
-
-### Build Artifacts
-
-After the plugin build completes, go to the **Artifacts** section in the GitHub Actions workflow run.
-
-You will see **multiple `.ez` and `.zip` files**, corresponding to the different RabbitMQ versions defined in `matrix.json`.
-
-#### Examples:
-
-* **Plugin `.ez` files**:
-
-  ```
-  seventh-state-hello-plugin-rabbitmq-v4.1.2-ez
-  seventh-state-hello-plugin-rabbitmq-v4.0.9-ez
-  ```
-
-* **Module override `.zip` files**:
-
-  ```
-  seventh-state-hello-plugin-rabbitmq-v4.1.2-modules
-  seventh-state-hello-plugin-rabbitmq-v4.0.9-modules
-  ```
-
-You can download and use these artifacts for testing or deployment.
-
-## Release Process
-
-To create a new release of the plugin:
-
-1. **Create and push a Git tag** (e.g. `v1.0.0`):
-
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-2. This will automatically trigger the **`release` GitHub Actions workflow**, which builds the plugin and attaches the artifacts to a new GitHub Release.
-
-3. After the release is published, you can go to the **"Releases"** tab in GitHub and optionally **edit the description**, or add notes, if needed.
+Contributions are welcome. If you find a bug or want additional metrics, open an issue or send a pull request. Please include tests for behavior changes when possible.
