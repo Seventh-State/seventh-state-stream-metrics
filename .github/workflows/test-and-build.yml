@@ -3,6 +3,7 @@ name: Test and Build
 on:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   load-matrix:
@@ -41,9 +42,13 @@ jobs:
         if: success()
         run: make dist DIST_AS_EZS=1 current_rmq_ref=${{ matrix.rabbitmq }}
 
+      - name: Zip release artifact with RabbitMQ version
+        if: success()
+        run: zip -rj seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}.zip plugins/seventh_state_hello_plugin-*.ez
+
       - name: Upload build artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}-ez
-          path: plugins/seventh_state_hello_plugin-*.ez
+          name: seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}
+          path: seventh-state-hello-plugin-rabbitmq-${{ matrix.rabbitmq }}.zip
