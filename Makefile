@@ -3,7 +3,7 @@ PROJECT_DESCRIPTION = Seventh State Hello Plugin
 PROJECT_MOD         = seven_hello_plugin_app
 PROJECT_VERSION     = 1.0.0
 
-current_rmq_ref     ?= v4.1.2
+current_rmq_ref     ?= v4.2.x
 
 define PROJECT_APP_EXTRA_KEYS
     {broker_version_requirements, []}
