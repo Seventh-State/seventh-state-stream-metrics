@@ -10,7 +10,7 @@ define PROJECT_APP_EXTRA_KEYS
 endef
 
 
-DEPS      = rabbit rabbitmq_management
+DEPS      = rabbit rabbitmq_management rabbitmq_prometheus
 TEST_DEPS = rabbitmq_ct_helpers rabbitmq_ct_client_helpers rabbitmq_stream_common
 
 DEP_EARLY_PLUGINS = rabbit_common/mk/rabbitmq-early-plugin.mk

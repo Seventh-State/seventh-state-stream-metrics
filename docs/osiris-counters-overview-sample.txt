@@ -1,0 +1,6 @@
+(rabbit@Lajoss-MacBook-Pro-2)3>
+                                osiris_counters:overview().
+#{{osiris_writer,{resource,<<"/">>,queue,<<"streamtest">>}} =>
+      #{offset => 0,chunks => 1,epoch => 1,committed_offset => 0,
+        readers => 0,first_offset => 0,first_timestamp => 0,
+        segments => 1}}

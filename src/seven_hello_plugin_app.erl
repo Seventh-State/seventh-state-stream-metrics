@@ -9,15 +9,33 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 
+-include("include/seven_hello_plugin.hrl").
+
 
 start(_StartType, _StartArgs) ->
-    case seven_hello_plugin_sup:start_link() of
-        {ok, Pid} ->
-            {ok, Pid};
-        Error ->
+    case ensure_prometheus_plugin_enabled() of
+        ok ->
+            _ = seven_stream_metrics_prometheus:register_collector(),
+            case seven_hello_plugin_sup:start_link() of
+                {ok, Pid} ->
+                    {ok, Pid};
+                Error ->
+                    _ = seven_stream_metrics_prometheus:unregister_collector(),
+                    Error
+            end;
+        {error, _} = Error ->
             Error
     end.
 
 stop(_State) ->
+    _ = seven_stream_metrics_prometheus:unregister_collector(),
     ok.
 
+ensure_prometheus_plugin_enabled() ->
+    case rabbit_plugins:is_enabled(rabbitmq_prometheus) of
+        true ->
+            ok;
+        false ->
+            ?ERR("Required plugin rabbitmq_prometheus is not enabled.", []),
+            {error, {missing_required_plugin, rabbitmq_prometheus}}
+    end.
