@@ -4,7 +4,7 @@
 %%%
 %%% @end
 %%% Created : 17 Jul 2025 by Seventh State <contact@seventhstate.io>
--module(seven_hello_plugin_sup).
+-module(seven_stream_metrics_sup).
 
 -behaviour(supervisor).
 
@@ -23,12 +23,12 @@ init(_Args) ->
 
     ChildSpecifications = [
         #{
-            id => seven_hello_plugin,
-            start => {seven_hello_plugin, start_link, []},
+            id => seven_stream_metrics,
+            start => {seven_stream_metrics, start_link, []},
             restart => permanent, % permanent | transient | temporary
             shutdown => 2000, % use 'infinity' for supervisor child
             type => worker, % worker | supervisor
-            modules => [seven_hello_plugin]
+            modules => [seven_stream_metrics]
         }
     ],
 

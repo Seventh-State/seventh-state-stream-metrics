@@ -4,7 +4,7 @@
 %%%
 %%% @end
 %%% Created : 17 Jul 2025 by Seventh State <contact@seventhstate.io>
--module(seven_hello_plugin).
+-module(seven_stream_metrics).
 
 -behaviour(gen_server).
 
@@ -12,12 +12,12 @@
 -export([start/1, stop/1, start_link/0, start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--include("include/seven_hello_plugin.hrl").
+-include("include/seven_stream_metrics.hrl").
 
 -record(state, {dummy}).
 
 start(Name) ->
-    seven_hello_plugin_sup:start_child(Name).
+    seven_stream_metrics_sup:start_child(Name).
 
 stop(Name) ->
     gen_server:call(Name, stop).

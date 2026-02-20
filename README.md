@@ -1,4 +1,4 @@
-# Seventh State Hello Plugin
+# Seventh State Stream Metrics Plugin
 
 This repository is a **template plugin** for Seventh State plugins. You can use it as a starting point for your own plugin development.
 
@@ -71,7 +71,7 @@ gmake ct-a_test_suite t="group:case" # Run a specific test case
 ## Template for Plugin with Custom RabbitMQ
 
 This repository also provides a template for developing plugins with a **custom RabbitMQ build**.
-If your plugin requires changes to the RabbitMQ source code (e.g. patching core modules), you should use the `hello-with-custom-rabbit` branch as a starting point.
+If your plugin requires changes to the RabbitMQ source code (e.g. patching core modules), you should use the `stream-metrics-with-custom-rabbit` branch as a starting point.
 It includes everything needed to build, test, and release your plugin alongside a custom RabbitMQ version.
 
 ### Step 1: Build RabbitMQ (Custom Branch)
@@ -111,8 +111,8 @@ It includes everything needed to build, test, and release your plugin alongside 
    For example:
 
    ```
-   priv/seven_hello_plugin_manifest_v4.1.2.json
-   priv/seven_hello_plugin_manifest_v4.0.9.json
+   priv/seven_stream_metrics_manifest_v4.1.2.json
+   priv/seven_stream_metrics_manifest_v4.0.9.json
    ```
 4. **Manually verify the manifest**, especially the `changed_modules` list, which includes all `.beam` files that were modified.
    Example manifest:
@@ -151,15 +151,15 @@ You will see **multiple `.ez` and `.zip` files**, corresponding to the different
 * **Plugin `.ez` files**:
 
   ```
-  seventh-state-hello-plugin-rabbitmq-v4.1.2-ez
-  seventh-state-hello-plugin-rabbitmq-v4.0.9-ez
+  seven-stream-metrics-rabbitmq-v4.1.2-ez
+  seven-stream-metrics-rabbitmq-v4.0.9-ez
   ```
 
 * **Module override `.zip` files**:
 
   ```
-  seventh-state-hello-plugin-rabbitmq-v4.1.2-modules
-  seventh-state-hello-plugin-rabbitmq-v4.0.9-modules
+  seven-stream-metrics-rabbitmq-v4.1.2-modules
+  seven-stream-metrics-rabbitmq-v4.0.9-modules
   ```
 
 You can download and use these artifacts for testing or deployment.

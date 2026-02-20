@@ -2,7 +2,7 @@
 %%% @copyright (C) 2025, Seventh State
 -module(seven_stream_metrics_prometheus).
 
--include("include/seven_hello_plugin.hrl").
+-include("include/seven_stream_metrics.hrl").
 
 -define(METRIC_PREFIX, "rabbitmq_stream_local_").
 -define(REGISTRY_7S_STREAMS, '7s_streams').
@@ -15,8 +15,18 @@
 %% Prometheus collector callbacks
 -export([collect_mf/2, collect_metrics/2]).
 
+
+% This is how current RabbitMQ places the family filter into the collector.
+-spec get_requested_families() -> [atom()].
+get_requested_families() ->
+    case get(prometheus_mf_filter) of
+        undefined -> [];
+        Families when is_list(Families) -> Families;
+        _ -> []
+    end.
+
 collect_mf(_Registry, Callback) ->
-    Samples = seven_stream_metrics_collector:collect(),
+    Samples = seven_stream_metrics_collector:collect(get_requested_families()),
     FieldSamples = maps:get(field_samples, Samples, #{}),
     lists:foreach(
         fun({Field, FieldData}) ->
@@ -35,13 +45,29 @@ collect_mf(_Registry, Callback) ->
 
 collect_metrics(_MetricName, {_Field, Samples}) ->
     [prometheus_model_helpers:gauge_metric(
-         [
-             {vhost, maps:get(vhost, Sample)},
-             {stream, maps:get(stream, Sample)},
-             {node_role, maps:get(node_role, Sample)}
-         ],
+         labels_for_sample(Sample),
          maps:get(value, Sample)
      ) || Sample <- Samples].
+
+labels_for_sample(#{consumer := Consumer, connection := Connection} = Sample) ->
+    [
+        {vhost, maps:get(vhost, Sample)},
+        {stream, maps:get(stream, Sample)},
+        {consumer, Consumer},
+        {connection, Connection}
+    ];
+labels_for_sample(#{pid := Pid} = Sample) ->
+    [
+        {vhost, maps:get(vhost, Sample)},
+        {stream, maps:get(stream, Sample)},
+        {pid, Pid}
+    ];
+labels_for_sample(Sample) ->
+    [
+        {vhost, maps:get(vhost, Sample)},
+        {stream, maps:get(stream, Sample)},
+        {role, maps:get(role, Sample)}
+    ].
 
 metric_name(Field) ->
     list_to_atom(?METRIC_PREFIX ++ atom_to_list(Field)).

@@ -4,19 +4,19 @@
 %%%
 %%% @end
 %%% Created : 17 Jul 2025 by Seventh State <contact@seventhstate.io>
--module(seven_hello_plugin_app).
+-module(seven_stream_metrics_app).
 
 -behaviour(application).
 -export([start/2, stop/1]).
 
--include("include/seven_hello_plugin.hrl").
+-include("include/seven_stream_metrics.hrl").
 
 
 start(_StartType, _StartArgs) ->
     case ensure_prometheus_plugin_enabled() of
         ok ->
             _ = seven_stream_metrics_prometheus:register_collector(),
-            case seven_hello_plugin_sup:start_link() of
+            case seven_stream_metrics_sup:start_link() of
                 {ok, Pid} ->
                     {ok, Pid};
                 Error ->

@@ -1,6 +1,14 @@
-(rabbit@Lajoss-MacBook-Pro-2)3>
-                                osiris_counters:overview().
-#{{osiris_writer,{resource,<<"/">>,queue,<<"streamtest">>}} =>
-      #{offset => 0,chunks => 1,epoch => 1,committed_offset => 0,
-        readers => 0,first_offset => 0,first_timestamp => 0,
-        segments => 1}}
+(rabbit@Lajoss-MacBook-Pro-2)2> osiris_counters:overview().
+#{{osiris_writer,{resource,<<"/">>,queue,<<"stream">>}} =>
+      #{offset => 146566991,chunks => 41618,epoch => 1,
+        committed_offset => 146562897,readers => 1,
+        first_offset => 0,first_timestamp => 1771499153044,
+        segments => 6},
+  {osiris_writer,{resource,<<"/">>,queue,<<"streamtest">>}} =>
+      #{offset => 1,chunks => 0,epoch => 11,committed_offset => 1,
+        readers => 0,first_offset => 0,
+        first_timestamp => 1771342522224,segments => 1},
+  {rabbit_stream_reader,{resource,<<"/">>,queue,<<"stream">>},
+                        0,<0.1100.0>} =>
+      #{offset => 146566992,chunks => 41618,first_offset => 0,
+        first_timestamp => 0,segments => 0}}

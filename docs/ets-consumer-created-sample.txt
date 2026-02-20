@@ -1,0 +1,16 @@
+(rabbit@Lajoss-MacBook-Pro-2)3> ets:tab2list(consumer_created).
+[{{{resource,<<"/">>,queue,<<"stream">>},
+   <0.893.0>,<<"stream.subid-0">>},
+  false,false,0,false,waiting,
+  [{<<"name">>,longstr,<<"c1">>},
+   {<<"single-active-consumer">>,longstr,<<"true">>}]},
+ {{{resource,<<"/">>,queue,<<"stream">>},
+   <0.887.0>,<<"stream.subid-0">>},
+  false,false,0,false,waiting,
+  [{<<"name">>,longstr,<<"c1">>},
+   {<<"single-active-consumer">>,longstr,<<"true">>}]},
+ {{{resource,<<"/">>,queue,<<"stream">>},
+   <0.881.0>,<<"stream.subid-0">>},
+  false,false,0,true,single_active,
+  [{<<"name">>,longstr,<<"c1">>},
+   {<<"single-active-consumer">>,longstr,<<"true">>}]}]
