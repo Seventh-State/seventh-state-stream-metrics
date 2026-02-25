@@ -45,3 +45,25 @@ sbin/rabbitmqctl -n rabbit-1 eval 'osiris_counters:overview().'
                         0,<13814.2033.0>} =>
       #{offset => 1102,chunks => 636,first_offset => 0,first_timestamp => 0,
         segments => 0}}
+
+Another example:
+
+sbin/rabbitmqctl -n rabbit-1 eval 'osiris_counters:overview().'
+#{{osiris_writer,{resource,<<"/">>,queue,<<"stream">>}} =>
+      #{offset => 15523195,chunks => 18581,epoch => 1,
+        committed_offset => 15523195,readers => 3,first_offset => 0,
+        first_timestamp => 1772010750292,segments => 32},
+  {osiris_replica_reader,{resource,<<"/">>,queue,<<"stream">>},
+                         {127,0,0,1},
+                         6339} =>
+      #{offset => 15523196,chunks => 18581,first_offset => 0,
+        first_timestamp => 0,segments => 0,offset_listeners => 10312},
+  {osiris_replica_reader,{resource,<<"/">>,queue,<<"stream">>},
+                         {127,0,0,1},
+                         6464} =>
+      #{offset => 15523196,chunks => 18581,first_offset => 0,
+        first_timestamp => 0,segments => 0,offset_listeners => 10306},
+  {rabbit_stream_queue,{resource,<<"/">>,queue,<<"stream">>},
+                       <<"amq.ctag-ChPQ1qRc9bXafFPbwK2ZZg">>,<13814.26098.0>} =>
+      #{offset => 267590,chunks => 257,first_offset => 0,first_timestamp => 0,
+        segments => 0}}

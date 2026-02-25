@@ -1,6 +1,6 @@
 %%% @author Seventh State <contact@seventhstate.io>
 %%% @copyright (C) 2025, Seventh State
-%%% @doc 
+%%% @doc
 %%%
 %%% @end
 %%% Created : 17 Jul 2025 by Seventh State <contact@seventhstate.io>
@@ -169,11 +169,16 @@ overview_shape_parsing_test() ->
                 offset => 11,
                 committed_offset => 9
             },
-        {rabbit_stream_reader, Resource, 0, Pid} =>
+            {rabbit_stream_reader, Resource, 0, Pid} =>
             #{
                 offset => 42,
                 chunks => 1
-            }
+                },
+            {rabbit_stream_queue, Resource, <<"amq.ctag-1">>, Pid} =>
+                #{
+                    offset => 99,
+                    chunks => 2
+                }
     },
     Metrics = seven_stream_metrics_collector:collect(
         [stream_metrics, consumers],
@@ -226,17 +231,27 @@ overview_shape_parsing_test() ->
         sort_samples(maps:get(committed_offset, FieldSamples))
     ),
     ?assertEqual(
-        [
+        sort_samples([
             #{
                 vhost => <<"/">>,
                 stream => <<"streamtest">>,
                 consumer => <<"stream.subid-0">>,
                 connection => list_to_binary(erlang:pid_to_list(Pid)),
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
+                protocol => <<"stream">>,
                 value => 42
+            },
+            #{
+                vhost => <<"/">>,
+                stream => <<"streamtest">>,
+                consumer => <<"amq.ctag-1">>,
+                connection => list_to_binary(erlang:pid_to_list(Pid)),
+                pid => list_to_binary(erlang:pid_to_list(Pid)),
+                protocol => <<"amqp">>,
+                value => 99
             }
-        ],
-        maps:get(consumer_offset, FieldSamples)
+        ]),
+        sort_samples(maps:get(consumer_offset, FieldSamples))
     ),
     ets:delete(Tab).
 
@@ -259,6 +274,10 @@ family_filtering_by_source_tag_test() ->
         {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_a">>}, 0, Pid} =>
             #{
                 offset => 11
+            },
+        {rabbit_stream_queue, {resource, <<"/">>, queue, <<"stream_a">>}, <<"amq.ctag-a">>, Pid} =>
+            #{
+                offset => 12
             }
     },
     ensure_table_deleted(consumer_created),
@@ -299,17 +318,27 @@ family_filtering_by_source_tag_test() ->
     ConsumerFields = to_field_samples(Consumers),
     ?assertEqual([consumer_offset], maps:keys(ConsumerFields)),
     ?assertEqual(
-        [
+        sort_samples([
             #{
                 vhost => <<"/">>,
                 stream => <<"stream_a">>,
                 consumer => <<"c1">>,
                 connection => <<"conn-a">>,
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
+                protocol => <<"stream">>,
                 value => 11
+            },
+            #{
+                vhost => <<"/">>,
+                stream => <<"stream_a">>,
+                consumer => <<"amq.ctag-a">>,
+                connection => <<"conn-a">>,
+                pid => list_to_binary(erlang:pid_to_list(Pid)),
+                protocol => <<"amqp">>,
+                value => 12
             }
-        ],
-        maps:get(consumer_offset, ConsumerFields)
+        ]),
+        sort_samples(maps:get(consumer_offset, ConsumerFields))
     ),
     ets:delete(ConnTab),
     ets:delete(Tab).
@@ -338,6 +367,7 @@ connection_name_fallback_and_truncation_test() ->
     ),
     [Sample] = maps:get(consumer_offset, to_field_samples(Consumers)),
     ?assertEqual(binary:part(LongName, 0, 100), maps:get(connection, Sample)),
+    ?assertEqual(<<"stream">>, maps:get(protocol, Sample)),
     ets:delete(ConnTab),
     ets:delete(Tab),
 
@@ -362,9 +392,143 @@ connection_name_fallback_and_truncation_test() ->
     [Sample2] = maps:get(consumer_offset, to_field_samples(Consumers2)),
     ?assertEqual(<<"fallback-name">>, maps:get(connection, Sample2)),
     ?assertEqual(list_to_binary(erlang:pid_to_list(Pid2)), maps:get(pid, Sample2)),
+    ?assertEqual(<<"stream">>, maps:get(protocol, Sample2)),
     ets:delete(ConnTab2),
     ets:delete(Tab2),
     exit(Pid2, kill).
+
+consumer_lag_family_filtering_test() ->
+    Pid = self(),
+    Overview = #{
+        {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_a">>}, 0, Pid} =>
+            #{offset => 100}
+    },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(rabbit_stream_consumer_created),
+    Tab = ets:new(consumer_created, [named_table, public]),
+    ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"c1">>}]}),
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
+                             [{offset_lag, 500}]}),
+    Consumers = seven_stream_metrics_collector:collect(
+        [consumer_lag],
+        fun() -> Overview end
+    ),
+    FieldSamples = to_field_samples(Consumers),
+    ?assertEqual([consumer_offset_lag], maps:keys(FieldSamples)),
+    [Sample] = maps:get(consumer_offset_lag, FieldSamples),
+    ?assertEqual(500, maps:get(value, Sample)),
+    ?assertEqual(<<"stream">>, maps:get(protocol, Sample)),
+    ets:delete(ConsumerTab),
+    ets:delete(Tab).
+
+consumer_offset_lag_metric_extraction_test() ->
+    Pid = self(),
+    Overview = #{
+        {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_a">>}, 0, Pid} =>
+            #{offset => 100},
+        {rabbit_stream_queue, {resource, <<"/">>, queue, <<"stream_b">>}, <<"amq.ctag-1">>, Pid} =>
+            #{offset => 50}
+    },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(rabbit_stream_consumer_created),
+    ensure_table_deleted(connection_created),
+    Tab = ets:new(consumer_created, [named_table, public]),
+    ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
+    ConnTab = ets:new(connection_created, [named_table, public]),
+    
+    % Insert stream reader consumer with offset_lag
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"reader-c1">>}]}),
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
+                             [{offset_lag, 1000}]}),
+    
+    % Insert AMQP consumer with offset_lag
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"amq.ctag-1">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"queue-c1">>}]}),
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"amq.ctag-1">>},
+                             [{offset_lag, 2000}]}),
+    ets:insert(ConnTab, {Pid, [{user_provided_name, <<"test-conn">>}]}),
+    
+    Metrics = seven_stream_metrics_collector:collect(
+        [consumer_lag],
+        fun() -> Overview end
+    ),
+    Samples = sort_samples(maps:get(consumer_offset_lag, to_field_samples(Metrics))),
+    ?assertEqual(2, length(Samples)),
+    
+    [Sample1, Sample2] = Samples,
+    ?assertEqual(2000, maps:get(value, Sample1)),
+    ?assertEqual(<<"amqp">>, maps:get(protocol, Sample1)),
+    
+    ?assertEqual(1000, maps:get(value, Sample2)),
+    ?assertEqual(<<"stream">>, maps:get(protocol, Sample2)),
+    
+    ets:delete(ConnTab),
+    ets:delete(ConsumerTab),
+    ets:delete(Tab).
+
+consumer_offset_lag_omitted_when_missing_test() ->
+    Pid = self(),
+    Overview = #{
+        {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_a">>}, 0, Pid} =>
+            #{offset => 100}
+    },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(rabbit_stream_consumer_created),
+    Tab = ets:new(consumer_created, [named_table, public]),
+    ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"c1">>}]}),
+    % No offset_lag entry in consumer data
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
+                             [{other_field, 123}]}),
+    Metrics = seven_stream_metrics_collector:collect(
+        [consumer_lag],
+        fun() -> Overview end
+    ),
+    FieldSamples = to_field_samples(Metrics),
+    ?assertEqual(false, maps:is_key(consumer_offset_lag, FieldSamples)),
+    ets:delete(ConsumerTab),
+    ets:delete(Tab).
+
+consumer_lag_with_invalid_offset_lag_values_test() ->
+    Pid = self(),
+    Overview = #{
+        {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_a">>}, 0, Pid} =>
+            #{offset => 100},
+        {rabbit_stream_reader, {resource, <<"/">>, queue, <<"stream_b">>}, 1, Pid} =>
+            #{offset => 50}
+    },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(rabbit_stream_consumer_created),
+    Tab = ets:new(consumer_created, [named_table, public]),
+    ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
+    
+    % Valid offset_lag
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"c1">>}]}),
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
+                             [{offset_lag, 500}]}),
+    
+    % Invalid offset_lag values (should be omitted)
+    ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"stream.subid-1">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"c2">>}]}),
+    ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, 1},
+                             [{offset_lag, <<"not_integer">>}]}),
+    
+    Metrics = seven_stream_metrics_collector:collect(
+        [consumer_lag],
+        fun() -> Overview end
+    ),
+    Samples = maps:get(consumer_offset_lag, to_field_samples(Metrics)),
+    ?assertEqual(1, length(Samples)),
+    [Sample] = Samples,
+    ?assertEqual(500, maps:get(value, Sample)),
+    
+    ets:delete(ConsumerTab),
+    ets:delete(Tab).
 
 %%====================================================================
 %%  Helper functions

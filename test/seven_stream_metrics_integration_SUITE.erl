@@ -18,6 +18,8 @@ groups() ->
     [{cluster_contract, [],
       [stream_local_metric_families_present_test,
        consumer_offset_with_consumer_label_test,
+       amqp_consumer_offset_test,
+       consumer_offset_lag_test,
        writer_and_replica_samples_exist_test,
        readers_present_test]}].
 
@@ -150,6 +152,71 @@ consumer_offset_with_consumer_label_test(Config) ->
         ok
     end.
 
+amqp_consumer_offset_test(Config) ->
+    Stream = ?config(test_stream, Config),
+    Ch = rabbit_ct_client_helpers:open_channel(Config, 0),
+    ConsumerTag = <<"test-amqp-consumer">>,
+
+    %% Stream queues require prefetch count to be set for AMQP consumers
+    #'basic.qos_ok'{} = amqp_channel:call(Ch, #'basic.qos'{prefetch_count = 10}),
+
+    #'basic.consume_ok'{} = amqp_channel:subscribe(
+        Ch,
+        #'basic.consume'{queue = Stream, consumer_tag = ConsumerTag},
+        self()),
+
+    RetryFun =
+        fun() ->
+            Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=consumers"),
+            case has_numeric_consumer_with_protocol(
+                   Body, "seventh_state_stream_local_consumer_offset", Stream, "amqp") of
+                true -> ok;
+                false -> {error, amqp_consumer_offset_not_found}
+            end
+        end,
+
+    case assert_eventually(RetryFun, 30000, 1000) of
+        ok ->
+            #'basic.cancel_ok'{} = amqp_channel:call(Ch, #'basic.cancel'{consumer_tag = ConsumerTag}),
+            ok;
+        {error, Reason} ->
+            _ = catch amqp_channel:call(Ch, #'basic.cancel'{consumer_tag = ConsumerTag}),
+            ct:fail("AMQP consumer offset metric not found: ~p", [Reason])
+    end.
+
+consumer_offset_lag_test(Config) ->
+    Stream = ?config(test_stream, Config),
+    Ch = rabbit_ct_client_helpers:open_channel(Config, 0),
+
+    %% Create a stream consumer with a name
+    #'basic.consume_ok'{} = amqp_channel:subscribe(
+        Ch,
+        #'basic.consume'{queue = Stream,
+                         consumer_tag = <<"stream-lag-consumer">>,
+                         arguments = [{<<"name">>, longstr, <<"lag-test-consumer">>}]},
+        self()),
+
+    RetryFun =
+        fun() ->
+            Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=consumer_lag"),
+            case has_numeric_consumer_stream_sample(
+                   Body, "seventh_state_stream_local_consumer_offset_lag", Stream) of
+                true -> ok;
+                false -> {error, consumer_offset_lag_not_found}
+            end
+        end,
+
+    case assert_eventually(RetryFun, 30000, 1000) of
+        ok ->
+            #'basic.cancel_ok'{} = amqp_channel:call(
+              Ch, #'basic.cancel'{consumer_tag = <<"stream-lag-consumer">>}),
+            ok;
+        {error, Reason} ->
+            _ = catch amqp_channel:call(
+              Ch, #'basic.cancel'{consumer_tag = <<"stream-lag-consumer">>}),
+            ct:fail("Consumer offset lag metric not found: ~p", [Reason])
+    end.
+
 readers_present_test(Config) ->
     Stream = ?config(test_stream, Config),
     RetryFun =
@@ -278,6 +345,21 @@ has_numeric_consumer_stream_sample(Body, Family, Stream0) ->
               lists:prefix(Prefix, Line)
               andalso has_label(Line, "stream", Stream)
               andalso has_consumer_label(Line)
+          andalso has_label(Line, "protocol", "stream")
+              andalso metric_value_is_numeric(Line)
+      end,
+      Lines).
+
+has_numeric_consumer_with_protocol(Body, Family, Stream0, Protocol) ->
+    Stream = stream_to_list(Stream0),
+    Prefix = Family ++ "{",
+    Lines = string:split(Body, "\n", all),
+    lists:any(
+      fun(Line) ->
+              lists:prefix(Prefix, Line)
+              andalso has_label(Line, "stream", Stream)
+              andalso has_consumer_label(Line)
+              andalso has_label(Line, "protocol", Protocol)
               andalso metric_value_is_numeric(Line)
       end,
       Lines).

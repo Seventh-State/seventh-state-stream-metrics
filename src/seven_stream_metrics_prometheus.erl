@@ -48,13 +48,14 @@ collect_metrics(_MetricName, {_Field, Samples}) ->
          maps:get(value, Sample)
      ) || Sample <- Samples].
 
-labels_for_sample(#{consumer := Consumer, connection := Connection, pid := Pid} = Sample) ->
+labels_for_sample(#{consumer := Consumer, connection := Connection, pid := Pid, protocol := Protocol} = Sample) ->
     [
         {vhost, maps:get(vhost, Sample)},
         {stream, maps:get(stream, Sample)},
         {consumer, Consumer},
         {connection, Connection},
-        {pid, Pid}
+        {pid, Pid},
+        {protocol, Protocol}
     ];
 labels_for_sample(Sample) ->
     [
@@ -70,6 +71,7 @@ metric_name(committed_offset) -> <<"seventh_state_stream_local_committed_offset"
 metric_name(segments) -> <<"seventh_state_stream_local_segments">>;
 metric_name(readers) -> <<"seventh_state_stream_local_readers">>;
 metric_name(consumer_offset) -> <<"seventh_state_stream_local_consumer_offset">>;
+metric_name(consumer_offset_lag) -> <<"seventh_state_stream_local_consumer_offset_lag">>;
 metric_name(packets) -> <<"seventh_state_stream_local_packets">>;
 metric_name(epoch) -> <<"seventh_state_stream_local_epoch">>;
 metric_name(Field) when is_atom(Field) ->
@@ -84,6 +86,7 @@ metric_help(committed_offset) -> <<"Local stream counter field from osiris_count
 metric_help(segments) -> <<"Local stream counter field from osiris_counters:overview(): segments.">>;
 metric_help(readers) -> <<"Local stream counter field from osiris_counters:overview(): readers.">>;
 metric_help(consumer_offset) -> <<"Local stream counter field from osiris_counters:overview(): consumer_offset.">>;
+metric_help(consumer_offset_lag) -> <<"Consumer offset lag from rabbit_stream_consumer_created ETS table.">>;
 metric_help(packets) -> <<"Local stream counter field from osiris_counters:overview(): packets.">>;
 metric_help(epoch) -> <<"Local stream counter field from osiris_counters:overview(): epoch.">>;
 metric_help(Field) when is_atom(Field) ->
