@@ -1,4 +1,4 @@
-PROJECT             = seven_stream_metrics
+PROJECT             = seventh_state_stream_metrics
 PROJECT_DESCRIPTION = Seventh State Stream Metrics Plugin
 PROJECT_MOD         = seven_stream_metrics_app
 PROJECT_VERSION     = 1.0.0

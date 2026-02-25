@@ -23,7 +23,7 @@ Define the externally observable behavior of the Seventh State Stream Metrics Pl
 
 ## Metric Contract
 
-- Metric family naming rule: `rabbitmq_stream_local_<field>`.
+- Metric family naming rule: `seventh_state_stream_local_<field>`.
 - Metric type: `gauge` for all emitted families.
 - Standard labels: `vhost`, `stream`, `role`.
 - `role` allowed values: `writer`, `replica`.
@@ -44,7 +44,7 @@ Known fields that may appear (when present and valid in source data):
 - `first_timestamp`
 - `segments`
 - `readers`
-- `consumer_offset` (exported as `rabbitmq_stream_local_consumer_offset`)
+- `consumer_offset` (exported as `seventh_state_stream_local_consumer_offset`)
 
 ## Collection and Filtering Rules
 
@@ -72,7 +72,7 @@ Known fields that may appear (when present and valid in source data):
 ## Acceptance Criteria
 
 - Plugin starts successfully on RabbitMQ `4.2.x` when `rabbitmq_prometheus` is enabled.
-- Scraping `/metrics/7s_streams` returns valid `rabbitmq_stream_local_<field>` gauges.
+- Scraping `/metrics/7s_streams` returns valid `seventh_state_stream_local_<field>` gauges.
 - All emitted samples contain exactly `vhost`, `stream`, `role`.
 - `role` values are correct for local writer/replica streams.
 - No lag or per-consumer metrics are exposed.
@@ -91,3 +91,16 @@ Integration verification (RabbitMQ `4.2.x`) must cover:
 - metrics emitted for local writer and replica stream cases
 - registry scrape path behavior for `7s_streams`
 - writer/replica label correctness across samples
+
+## Local Test Environment
+
+Use these commands before running tests to ensure the expected toolchain:
+
+```bash
+source "$HOME/.asdf/asdf.sh"
+asdf shell erlang 26.2.5.6
+export KIEX_HOME="$HOME/.kiex"
+source "$KIEX_HOME/scripts/kiex"
+kiex use 1.15.8-26
+gmake tests
+```

@@ -12,3 +12,36 @@
                         0,<0.1100.0>} =>
       #{offset => 146566992,chunks => 41618,first_offset => 0,
         first_timestamp => 0,segments => 0}}
+
+Another example:
+
+ sbin/rabbitmqctl -n rabbit-1 eval 'osiris_counters:overview().'
+#{{osiris_replica,{resource,<<"/">>,queue,<<"stream">>}} =>
+      #{offset => 5518,chunks => 0,epoch => 2,committed_offset => 5518,
+        readers => 0,first_offset => 0,first_timestamp => 1771861706788,
+        segments => 1,forced_gcs => 28,packets => 0},
+  {osiris_replica,{resource,<<"/">>,queue,<<"test-stream">>}} =>
+      #{offset => 1,chunks => 0,epoch => 3,committed_offset => 1,readers => 0,
+        first_offset => 0,first_timestamp => 1771859069658,segments => 1,
+        forced_gcs => 28,packets => 0}}
+
+Another example:
+
+sbin/rabbitmqctl -n rabbit-1 eval 'osiris_counters:overview().'
+#{{osiris_writer,{resource,<<"/">>,queue,<<"stream">>}} =>
+      #{offset => 1101,chunks => 1100,epoch => 1,committed_offset => 1101,
+        readers => 3,first_offset => 0,first_timestamp => 0,segments => 1},
+  {osiris_replica_reader,{resource,<<"/">>,queue,<<"stream">>},
+                         {127,0,0,1},
+                         6155} =>
+      #{offset => 1102,chunks => 1100,first_offset => 0,first_timestamp => 0,
+        segments => 0,offset_listeners => 1101},
+  {osiris_replica_reader,{resource,<<"/">>,queue,<<"stream">>},
+                         {127,0,0,1},
+                         6418} =>
+      #{offset => 1102,chunks => 1100,first_offset => 0,first_timestamp => 0,
+        segments => 0,offset_listeners => 1101},
+  {rabbit_stream_reader,{resource,<<"/">>,queue,<<"stream">>},
+                        0,<13814.2033.0>} =>
+      #{offset => 1102,chunks => 636,first_offset => 0,first_timestamp => 0,
+        segments => 0}}

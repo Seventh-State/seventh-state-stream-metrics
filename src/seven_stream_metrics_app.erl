@@ -15,12 +15,16 @@
 start(_StartType, _StartArgs) ->
     case ensure_prometheus_plugin_enabled() of
         ok ->
-            _ = seven_stream_metrics_prometheus:register_collector(),
-            case seven_stream_metrics_sup:start_link() of
-                {ok, Pid} ->
-                    {ok, Pid};
-                Error ->
-                    _ = seven_stream_metrics_prometheus:unregister_collector(),
+            case seven_stream_metrics_prometheus:register_collector() of
+                ok ->
+                    case seven_stream_metrics_sup:start_link() of
+                        {ok, Pid} ->
+                            {ok, Pid};
+                        Error ->
+                            _ = seven_stream_metrics_prometheus:unregister_collector(),
+                            Error
+                    end;
+                {error, _} = Error ->
                     Error
             end;
         {error, _} = Error ->

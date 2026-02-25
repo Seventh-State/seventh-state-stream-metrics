@@ -2,64 +2,67 @@
 %%% @copyright (C) 2025, Seventh State
 -module(seven_stream_metrics_collector).
 
+-define(EXCLUDED_COUNTER_FIELDS, [forced_gcs]).
+-define(STREAM_METRICS_FIELDS,
+        [offset, first_offset, first_timestamp, committed_offset, segments, readers]).
+-define(CONSUMERS_FIELDS, [consumer_offset]).
+-define(STREAM_MISC_FIELDS, [packets, epoch]).
+
+-type osiris_resource() :: {resource, binary(), queue, binary()}.
+-type osiris_role_key() :: {osiris_writer | osiris_replica, osiris_resource()}.
+-type osiris_reader_key() :: {rabbit_stream_reader, osiris_resource(), non_neg_integer(), pid()}.
+-type osiris_overview_key() :: osiris_role_key() | osiris_reader_key().
+-type osiris_counter_key() ::
+    offset
+    | chunks
+    | epoch
+    | committed_offset
+    | readers
+    | first_offset
+    | first_timestamp
+    | segments
+    | packets
+    | forced_gcs.
+-type osiris_counters() :: #{osiris_counter_key() => integer()}.
+-type osiris_overview() :: #{osiris_overview_key() => osiris_counters()}.
+
 -export([
-    collect/0,
     collect/1,
-    collect/2,
-    discover_local_streams/0,
-    discover_local_streams/1,
-    discover_local_streams/2,
-    entries_from_overview/1,
-    entries_from_overview/2,
-    build_metrics/1
+    collect/2
 ]).
 
-collect() ->
-    collect([], fun discover_local_streams/0).
-
 collect(Families) when is_list(Families) ->
-    ConsumerMap = lookup_context(Families),
-    collect(Families, fun() -> discover_local_streams(Families, ConsumerMap) end);
-
-collect(DiscoveryFun) when is_function(DiscoveryFun, 0) ->
-    collect([], DiscoveryFun).
+    collect(Families, fun get_osiris_overview/0).
 
 collect(Families, DiscoveryFun)
   when is_list(Families), is_function(DiscoveryFun, 0) ->
-    Raw = safe_call(DiscoveryFun),
-    build_metrics(raw_entries_for_families(Raw, Families)).
-
-discover_local_streams() ->
-    discover_local_streams([]).
-
-discover_local_streams(Families) when is_list(Families) ->
-    discover_local_streams(Families, #{}).
-
-discover_local_streams(Families, ConsumerMap) when is_list(Families), is_map(ConsumerMap) ->
-    Overview = safe_apply(osiris_counters, overview, []),
+    ConsumerMap = lookup_context(Families),
+    Overview = DiscoveryFun(),
     FilteredOverview = filter_overview_for_families(Overview, Families),
-    entries_from_overview(FilteredOverview, ConsumerMap).
+    Entries = entries_from_overview(FilteredOverview, ConsumerMap),
+    build_metrics(Entries, Families).
 
-entries_from_overview(Overview) ->
-    entries_from_overview(Overview, #{}).
+-spec get_osiris_overview() -> osiris_overview().
+get_osiris_overview() ->
+    case osiris_counters:overview() of
+        Overview when is_map(Overview) -> Overview;
+        _ -> #{}
+    end.
 
 entries_from_overview(Overview, ConsumerMap) when is_map(Overview), is_map(ConsumerMap) ->
-    lists:reverse(
-        maps:fold(fun(Key, Counters, Acc) ->
-                          overview_item_to_entry(Key, Counters, Acc, ConsumerMap)
-                  end, [], Overview)
-    );
-entries_from_overview(_, _) ->
-    [].
-
-overview_item_to_entry({RoleTag, Resource}, Counters, Acc, _ConsumerMap) when is_map(Counters) ->
-    case {normalize_overview_role(RoleTag), parse_resource(Resource)} of
-        {{ok, Role}, {ok, VHost, Stream}} ->
+    maps:fold(fun(Key, Counters, Acc) ->
+                        overview_item_to_entry(Key, Counters, Acc, ConsumerMap)
+               end, [], Overview).
+overview_item_to_entry({RoleTag, Resource}, Counters, Acc, _ConsumerMap) when
+    (RoleTag =:= osiris_writer orelse RoleTag =:= osiris_replica),
+    is_map(Counters) ->
+    case {role_label(RoleTag), parse_resource(Resource)} of
+        {RoleLabel, {ok, VHost, Stream}} when is_binary(RoleLabel) ->
             [#{
                 vhost => VHost,
                 stream => Stream,
-                role => Role,
-                counters => filter_counters_for_role(Role, Counters)
+                role => RoleLabel,
+                counters => Counters
             } | Acc];
         _ ->
             Acc
@@ -79,52 +82,37 @@ overview_item_to_entry(
                 stream => Stream,
                 consumer => Consumer,
                 connection => connection_label(Pid),
+                pid => pid_to_binary(Pid),
                 counters => #{consumer_offset => Offset}
             } | Acc];
         _ ->
-            logger:error(
-                "Unexpected reader entry in osiris_counters:overview(): ~p with counters ~p",
-                [{rabbit_stream_reader, Resource, _SubscriptionId, Pid}, Counters]
-            ),
             Acc
     end;
+% we don't want to display:
+% - osiris_replica_reader, it is an internal reader used for replication
 overview_item_to_entry(_Key, _Counters, Acc, _ConsumerMap) ->
     Acc.
 
-normalize_overview_role(osiris_writer) ->
-    {ok, writer};
-normalize_overview_role(osiris_replica) ->
-    {ok, replica};
-normalize_overview_role(_) ->
-    error.
-
 parse_resource({resource, VHost, queue, Stream}) ->
-    {ok, VHost, Stream};
-parse_resource(#{virtual_host := VHost, kind := queue, name := Stream}) ->
     {ok, VHost, Stream};
 parse_resource(_) ->
     error.
 
-filter_counters_for_role(writer, Counters) ->
-    Counters;
-filter_counters_for_role(replica, Counters) ->
-    maps:remove(readers, Counters);
-filter_counters_for_role(_, Counters) ->
-    Counters.
+remove_excluded_counters(Counters) ->
+    maps:without(?EXCLUDED_COUNTER_FIELDS, Counters).
 
-build_metrics(RawEntries) ->
+build_metrics(RawEntries, Families) ->
     FieldSamples = lists:foldl(fun entry_to_field_samples/2, #{}, RawEntries),
-    #{
-        field_samples => finalize_field_samples(FieldSamples)
-    }.
+    filter_field_samples_for_families(FieldSamples, Families).
 entry_to_field_samples(
-    #{vhost := VHost, stream := Stream, role := Role, counters := Counters},
+    #{vhost := VHost, stream := Stream, role := RoleLabel, counters := Counters},
     Acc0
 ) when is_map(Counters) ->
+    FilteredCounters = remove_excluded_counters(Counters),
     BaseSample = #{
         vhost => VHost,
         stream => Stream,
-        role => role_label(Role)
+        role => RoleLabel
     },
     maps:fold(
         fun(Field, Value, Acc) when is_atom(Field), is_integer(Value) ->
@@ -135,7 +123,7 @@ entry_to_field_samples(
             Acc
         end,
         Acc0,
-        Counters
+        FilteredCounters
     );
 entry_to_field_samples(
     #{
@@ -143,15 +131,18 @@ entry_to_field_samples(
         stream := Stream,
         consumer := Consumer,
         connection := Connection,
+        pid := Pid,
         counters := Counters
      },
     Acc0
 ) when is_map(Counters) ->
+    FilteredCounters = remove_excluded_counters(Counters),
     BaseSample = #{
         vhost => VHost,
         stream => Stream,
         consumer => Consumer,
-        connection => Connection
+        connection => Connection,
+        pid => Pid
     },
     maps:fold(
         fun(Field, Value, Acc) when is_atom(Field), is_integer(Value) ->
@@ -162,42 +153,51 @@ entry_to_field_samples(
             Acc
         end,
         Acc0,
-        Counters
+        FilteredCounters
     );
 entry_to_field_samples(_Entry, Acc) ->
     Acc.
 
-finalize_field_samples(FieldSamples) ->
-    maps:map(fun(_Field, Samples) -> lists:reverse(Samples) end, FieldSamples).
-
-raw_entries_for_families(RawEntries, _Families) when is_list(RawEntries) ->
-    RawEntries;
-raw_entries_for_families(Overview, Families) when is_map(Overview) ->
-    entries_from_overview(filter_overview_for_families(Overview, Families));
-raw_entries_for_families(_, _Families) ->
-    [].
-
-filter_overview_for_families(Overview, []) when is_map(Overview) ->
-    Overview;
 filter_overview_for_families(Overview, Families) when is_map(Overview), is_list(Families) ->
     AllowedTags = allowed_source_tags(Families),
     maps:filter(
       fun(Key, _Value) ->
-              lists:member(source_tag_from_key(Key), AllowedTags)
+              maps:is_key(source_tag_from_key(Key), AllowedTags)
       end,
       Overview);
 filter_overview_for_families(_Overview, _Families) ->
     #{}.
 
 allowed_source_tags(Families) ->
-    lists:usort(
-      lists:flatten([source_tags_for_family(Family) || Family <- Families])).
+    Tags = lists:flatten([source_tags_for_family(Family) || Family <- Families]),
+    maps:from_keys(Tags, true).
 
 source_tags_for_family(stream_metrics) ->
+    [osiris_writer, osiris_replica];
+source_tags_for_family(stream_misc) ->
     [osiris_writer, osiris_replica];
 source_tags_for_family(consumers) ->
     [rabbit_stream_reader];
 source_tags_for_family(_) ->
+    [].
+
+filter_field_samples_for_families(FieldSamples, Families)
+  when is_map(FieldSamples), is_list(Families) ->
+    AllowedFields = allowed_fields_for_families(Families),
+    maps:with(AllowedFields, FieldSamples);
+filter_field_samples_for_families(_FieldSamples, _Families) ->
+    #{}.
+
+allowed_fields_for_families(Families) ->
+    lists:flatten([family_fields(Family) || Family <- Families]).
+
+family_fields(stream_misc) ->
+    ?STREAM_MISC_FIELDS;
+family_fields(consumers) ->
+    ?CONSUMERS_FIELDS;
+family_fields(stream_metrics) ->
+    ?STREAM_METRICS_FIELDS;
+family_fields(_) ->
     [].
 
 source_tag_from_key({Tag, _}) when is_atom(Tag) ->
@@ -207,12 +207,12 @@ source_tag_from_key({Tag, _, _, _}) when is_atom(Tag) ->
 source_tag_from_key(_) ->
     undefined.
 
-role_label(writer) ->
+role_label(osiris_writer) ->
     <<"writer">>;
-role_label(replica) ->
+role_label(osiris_replica) ->
     <<"replica">>;
-role_label(Other) ->
-    iolist_to_binary(io_lib:format("~p", [Other])).
+role_label(_) ->
+    error.
 
 lookup_context(Families) ->
     case lists:member(consumers, Families) of
@@ -311,17 +311,3 @@ pid_to_binary(Bin) when is_binary(Bin) ->
     Bin;
 pid_to_binary(Other) ->
     iolist_to_binary(io_lib:format("~p", [Other])).
-
-safe_call(Fun) ->
-    try
-        Fun()
-    catch
-        _:_ -> []
-    end.
-
-safe_apply(Module, Function, Args) ->
-    try
-        apply(Module, Function, Args)
-    catch
-        _:_ -> []
-    end.

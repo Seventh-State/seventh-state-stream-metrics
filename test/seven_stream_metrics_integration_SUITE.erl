@@ -19,7 +19,7 @@ groups() ->
       [stream_local_metric_families_present_test,
        consumer_offset_with_consumer_label_test,
        writer_and_replica_samples_exist_test,
-       readers_writer_only_test]}].
+       readers_present_test]}].
 
 init_per_suite(Config) ->
     rabbit_ct_helpers:log_environment(),
@@ -59,20 +59,28 @@ stream_local_metric_families_present_test(Config) ->
         fun() ->
             case prometheus_get(Config, 0, Path) of
                 {ok, _Headers, Body} ->
-                    case has_metric_family(Body, "rabbitmq_stream_local_offset")
-                      andalso has_metric_family(Body, "rabbitmq_stream_local_committed_offset")
-                      andalso has_numeric_stream_sample(
-                                  Body, "rabbitmq_stream_local_offset", Stream)
-                      andalso has_numeric_stream_sample(
-                                  Body, "rabbitmq_stream_local_committed_offset", Stream)
-                      andalso not has_metric_family(Body, "rabbitmq_stream_local_consumer_offset")
-                    of
-                        true ->
-                            ok;
-                        false ->
-                            {error, rabbit_misc:format(
-                                      "Expected stream metrics were not present yet for stream ~ts.",
-                                      [Stream])}
+                    try
+                        require_metric_family(
+                          Body, "seventh_state_stream_local_offset", missing_offset_family),
+                        require_metric_family(
+                          Body,
+                          "seventh_state_stream_local_committed_offset",
+                          missing_committed_offset_family),
+                        has_numeric_stream_sample(
+                          Body, "seventh_state_stream_local_offset", Stream, missing_offset_sample),
+                        has_numeric_stream_sample(
+                          Body,
+                          "seventh_state_stream_local_committed_offset",
+                          Stream,
+                          missing_committed_offset_sample),
+                        no_metric_family(
+                          Body,
+                          "seventh_state_stream_local_consumer_offset",
+                          unexpected_consumer_offset_family),
+                        ok
+                    catch
+                        error:Reason ->
+                            {error, Reason}
                     end;
                 {error, Reason} ->
                     {error, Reason}
@@ -94,9 +102,9 @@ writer_and_replica_samples_exist_test(Config) ->
         fun() ->
             Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=stream_metrics"),
             HasWriter = has_numeric_stream_role_sample(
-                          Body, "rabbitmq_stream_local_offset", Stream, "writer"),
+                          Body, "seventh_state_stream_local_offset", Stream, "writer"),
             HasReplica = has_numeric_stream_role_sample(
-                           Body, "rabbitmq_stream_local_offset", Stream, "replica"),
+                           Body, "seventh_state_stream_local_offset", Stream, "replica"),
             case HasWriter andalso HasReplica of
                 true ->
                     ok;
@@ -122,9 +130,9 @@ consumer_offset_with_consumer_label_test(Config) ->
             fun() ->
                 Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=consumers"),
                 case has_numeric_consumer_stream_sample(
-                       Body, "rabbitmq_stream_local_consumer_offset", Stream) of
+                       Body, "seventh_state_stream_local_consumer_offset", Stream) of
                     true ->
-                        case has_metric_family(Body, "rabbitmq_stream_local_offset") of
+                        case has_metric_family(Body, "seventh_state_stream_local_offset") of
                             true -> {error, unexpected_stream_metrics_in_consumers_family};
                             false -> ok
                         end;
@@ -142,22 +150,18 @@ consumer_offset_with_consumer_label_test(Config) ->
         ok
     end.
 
-readers_writer_only_test(Config) ->
+readers_present_test(Config) ->
     Stream = ?config(test_stream, Config),
     RetryFun =
         fun() ->
             Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=stream_metrics"),
-            case has_numeric_stream_sample(Body, "rabbitmq_stream_local_readers", Stream) of
-                false ->
-                    {error, readers_not_available};
-                true ->
-                    case has_numeric_stream_role_sample(
-                           Body, "rabbitmq_stream_local_readers", Stream, "replica") of
-                        true ->
-                            {error, replica_readers_found};
-                        false ->
-                            ok
-                    end
+            try
+                has_numeric_stream_sample(
+                  Body, "seventh_state_stream_local_readers", Stream, readers_not_available),
+                ok
+            catch
+                error:Reason ->
+                    {error, Reason}
             end
         end,
     case assert_eventually(RetryFun, 20000, 1000) of
@@ -167,7 +171,7 @@ readers_writer_only_test(Config) ->
             ct:pal("Optional readers metric not available for stream ~ts; skipping.", [Stream]),
             {skip, "optional readers metric absent"};
         {error, Reason} ->
-            ct:fail("Writer-only readers assertion failed: ~tp", [Reason])
+            ct:fail("readers metric assertion failed: ~tp", [Reason])
     end.
 
 create_stream_queue(Config, QueueName) ->
@@ -240,8 +244,27 @@ has_metric_family(Body, Family) ->
     RE = rabbit_misc:format("^~ts", [Family]),
     re:run(Body, RE, [{capture, none}, multiline]) =:= match.
 
+require_metric_family(Body, Family, Reason) ->
+    case has_metric_family(Body, Family) of
+        true -> ok;
+        false -> erlang:error(Reason)
+    end.
+
+no_metric_family(Body, Family, Reason) ->
+    case has_metric_family(Body, Family) of
+        false -> ok;
+        true -> erlang:error(Reason)
+    end.
+
 has_numeric_stream_sample(Body, Family, Stream) ->
-    has_numeric_matching_sample(Body, Family, Stream, undefined).
+    has_numeric_stream_sample(
+      Body, Family, Stream, {missing_numeric_stream_sample, Family, Stream}).
+
+has_numeric_stream_sample(Body, Family, Stream, Reason) ->
+    case has_numeric_matching_sample(Body, Family, Stream, undefined) of
+        true -> ok;
+        false -> erlang:error(Reason)
+    end.
 
 has_numeric_stream_role_sample(Body, Family, Stream, Role) ->
     has_numeric_matching_sample(Body, Family, Stream, Role).

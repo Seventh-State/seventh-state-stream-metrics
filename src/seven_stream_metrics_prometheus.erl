@@ -4,7 +4,7 @@
 
 -include("include/seven_stream_metrics.hrl").
 
--define(METRIC_PREFIX, "rabbitmq_stream_local_").
+-define(METRIC_PREFIX, <<"seventh_state_stream_local_">>).
 -define(REGISTRY_7S_STREAMS, '7s_streams').
 -define(SCRAPE_DURATION, telemetry_scrape_duration_seconds).
 -define(SCRAPE_SIZE, telemetry_scrape_size_bytes).
@@ -26,10 +26,9 @@ get_requested_families() ->
     end.
 
 collect_mf(_Registry, Callback) ->
-    Samples = seven_stream_metrics_collector:collect(get_requested_families()),
-    FieldSamples = maps:get(field_samples, Samples, #{}),
-    lists:foreach(
-        fun({Field, FieldData}) ->
+    FieldSamples = seven_stream_metrics_collector:collect(get_requested_families()),
+    maps:foreach(
+        fun(Field, FieldData) ->
             MetricName = metric_name(Field),
             MF = prometheus_model_helpers:create_mf(
                 MetricName,
@@ -40,7 +39,7 @@ collect_mf(_Registry, Callback) ->
             ),
             Callback(MF)
         end,
-        maps:to_list(FieldSamples)
+        FieldSamples
     ).
 
 collect_metrics(_MetricName, {_Field, Samples}) ->
@@ -49,17 +48,12 @@ collect_metrics(_MetricName, {_Field, Samples}) ->
          maps:get(value, Sample)
      ) || Sample <- Samples].
 
-labels_for_sample(#{consumer := Consumer, connection := Connection} = Sample) ->
+labels_for_sample(#{consumer := Consumer, connection := Connection, pid := Pid} = Sample) ->
     [
         {vhost, maps:get(vhost, Sample)},
         {stream, maps:get(stream, Sample)},
         {consumer, Consumer},
-        {connection, Connection}
-    ];
-labels_for_sample(#{pid := Pid} = Sample) ->
-    [
-        {vhost, maps:get(vhost, Sample)},
-        {stream, maps:get(stream, Sample)},
+        {connection, Connection},
         {pid, Pid}
     ];
 labels_for_sample(Sample) ->
@@ -69,37 +63,78 @@ labels_for_sample(Sample) ->
         {role, maps:get(role, Sample)}
     ].
 
-metric_name(Field) ->
-    list_to_atom(?METRIC_PREFIX ++ atom_to_list(Field)).
+metric_name(offset) -> <<"seventh_state_stream_local_offset">>;
+metric_name(first_offset) -> <<"seventh_state_stream_local_first_offset">>;
+metric_name(first_timestamp) -> <<"seventh_state_stream_local_first_timestamp">>;
+metric_name(committed_offset) -> <<"seventh_state_stream_local_committed_offset">>;
+metric_name(segments) -> <<"seventh_state_stream_local_segments">>;
+metric_name(readers) -> <<"seventh_state_stream_local_readers">>;
+metric_name(consumer_offset) -> <<"seventh_state_stream_local_consumer_offset">>;
+metric_name(packets) -> <<"seventh_state_stream_local_packets">>;
+metric_name(epoch) -> <<"seventh_state_stream_local_epoch">>;
+metric_name(Field) when is_atom(Field) ->
+    <<?METRIC_PREFIX/binary, (atom_to_binary(Field, utf8))/binary>>;
+metric_name(_) ->
+    <<"seventh_state_stream_local_unknown">>.
 
-metric_help(Field) ->
-    iolist_to_binary([
-        "Local stream counter field from osiris_counters:overview(): ",
-        atom_to_list(Field),
-        "."
-    ]).
+metric_help(offset) -> <<"Local stream counter field from osiris_counters:overview(): offset.">>;
+metric_help(first_offset) -> <<"Local stream counter field from osiris_counters:overview(): first_offset.">>;
+metric_help(first_timestamp) -> <<"Local stream counter field from osiris_counters:overview(): first_timestamp.">>;
+metric_help(committed_offset) -> <<"Local stream counter field from osiris_counters:overview(): committed_offset.">>;
+metric_help(segments) -> <<"Local stream counter field from osiris_counters:overview(): segments.">>;
+metric_help(readers) -> <<"Local stream counter field from osiris_counters:overview(): readers.">>;
+metric_help(consumer_offset) -> <<"Local stream counter field from osiris_counters:overview(): consumer_offset.">>;
+metric_help(packets) -> <<"Local stream counter field from osiris_counters:overview(): packets.">>;
+metric_help(epoch) -> <<"Local stream counter field from osiris_counters:overview(): epoch.">>;
+metric_help(Field) when is_atom(Field) ->
+    <<"Local stream counter field from osiris_counters:overview(): ",
+      (atom_to_binary(Field, utf8))/binary,
+      ".">>;
+metric_help(_) ->
+    <<"Local stream counter field from osiris_counters:overview().">>.
 
 register_collector() ->
-    _ = safe_apply(prometheus_registry, register_collectors, [?REGISTRY_7S_STREAMS, []]),
-    _ = setup_registry_metrics(?REGISTRY_7S_STREAMS),
-    case safe_apply(prometheus_registry, register_collector, [?REGISTRY_7S_STREAMS, ?MODULE]) of
+    case ensure_registry(?REGISTRY_7S_STREAMS) of
         ok ->
-            ?INF("Registered stream metrics collector in registry ~p.", [?REGISTRY_7S_STREAMS]),
-            ok;
-        {error, already_exists} ->
-            ok;
-        _ ->
-            case safe_apply(prometheus_registry, register_collector, [?MODULE]) of
-                ok -> ok;
-                {error, already_exists} -> ok;
-                Error -> Error
-            end
+            case setup_registry_metrics(?REGISTRY_7S_STREAMS) of
+                ok ->
+                    case safe_apply(
+                           prometheus_registry,
+                           register_collector,
+                           [?REGISTRY_7S_STREAMS, ?MODULE]
+                         ) of
+                        ok ->
+                            ?INF(
+                              "Registered stream metrics collector in registry ~p.",
+                              [?REGISTRY_7S_STREAMS]),
+                            ok;
+                        {error, already_exists} ->
+                            ok;
+                        {error, _} = Error ->
+                            Error;
+                        Other ->
+                            {error,
+                             {unexpected_result,
+                              {prometheus_registry, register_collector, Other}}}
+                    end;
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
     end.
 
 unregister_collector() ->
-    _ = safe_apply(prometheus_registry, deregister_collector, [?REGISTRY_7S_STREAMS, ?MODULE]),
-    _ = safe_apply(prometheus_registry, deregister_collector, [?MODULE]),
-    ok.
+    case safe_apply(prometheus_registry, deregister_collector, [?REGISTRY_7S_STREAMS, ?MODULE]) of
+        ok ->
+            ok;
+        {error, not_found} ->
+            ok;
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, {unexpected_result, {prometheus_registry, deregister_collector, Other}}}
+    end.
 
 setup_registry_metrics(Registry) ->
     ScrapeDuration = [
@@ -114,15 +149,52 @@ setup_registry_metrics(Registry) ->
         {labels, ["registry", "content_type"]},
         {registry, Registry}
     ],
-    _ = safe_apply(prometheus_summary, declare, [ScrapeDuration]),
-    _ = safe_apply(prometheus_summary, declare, [ScrapeSize]),
-    ok.
+    case declare_summary_metric(ScrapeDuration) of
+        ok ->
+            declare_summary_metric(ScrapeSize);
+        {error, _} = Error ->
+            Error
+    end.
+
+ensure_registry(Registry) ->
+    case safe_apply(prometheus_registry, register_collectors, [Registry, []]) of
+        ok ->
+            ok;
+        true ->
+            ok;
+        {error, already_exists} ->
+            ok;
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, {unexpected_result, {prometheus_registry, register_collectors, Other}}}
+    end.
+
+declare_summary_metric(Options) ->
+    case safe_apply(prometheus_summary, declare, [Options]) of
+        ok ->
+            ok;
+        true ->
+            ok;
+        false ->
+            ok;
+        {error, already_exists} ->
+            ok;
+        {error, _} = Error ->
+            Error;
+        Other ->
+            {error, {unexpected_result, {prometheus_summary, declare, Other}}}
+    end.
 
 safe_apply(Module, Function, Args) ->
-    _ = code:ensure_loaded(Module),
-    try
-        apply(Module, Function, Args)
-    catch
-        error:undef -> error;
-        _:_ -> error
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            try
+                apply(Module, Function, Args)
+            catch
+                Class:Reason:Stacktrace ->
+                    {error, {apply_failed, Module, Function, Class, Reason, Stacktrace}}
+            end;
+        {error, Reason} ->
+            {error, {module_not_loaded, Module, Reason}}
     end.

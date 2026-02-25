@@ -50,18 +50,32 @@ core_functionality_first_use_case() ->
     ?assertMatch([_|_], seven_stream_metrics:module_info()).
 
 invalid_entry_omitted_test() ->
-    Metrics = seven_stream_metrics_collector:build_metrics([
-        #{vhost => <<"/">>, stream => <<"orders">>, role => writer, counters => #{offset => <<"x">>}},
-        #{vhost => <<"/">>, stream => <<"payments">>, role => replica}
-    ]),
-    ?assertEqual(#{}, maps:get(field_samples, Metrics)).
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_metrics],
+        fun() ->
+            #{
+                {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
+                    #{offset => <<"x">>},
+                {osiris_replica, {resource, <<"/">>, queue, <<"payments">>}} =>
+                    not_a_counter_map
+            }
+        end
+    ),
+    ?assertEqual(#{}, to_field_samples(Metrics)).
 
 optional_reader_metric_omission_test() ->
-    Metrics = seven_stream_metrics_collector:build_metrics([
-        #{vhost => <<"/">>, stream => <<"orders">>, role => writer, counters => #{offset => 120}},
-        #{vhost => <<"/">>, stream => <<"payments">>, role => replica, counters => #{offset => 55}}
-    ]),
-    FieldSamples = maps:get(field_samples, Metrics),
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_metrics],
+        fun() ->
+            #{
+                {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
+                    #{offset => 120},
+                {osiris_replica, {resource, <<"/">>, queue, <<"payments">>}} =>
+                    #{offset => 55}
+            }
+        end
+    ),
+    FieldSamples = to_field_samples(Metrics),
     ?assertEqual(
         sort_samples([
             #{
@@ -82,11 +96,18 @@ optional_reader_metric_omission_test() ->
     ?assertEqual(undefined, maps:get(readers, FieldSamples, undefined)).
 
 reader_metric_present_when_available_test() ->
-    Metrics = seven_stream_metrics_collector:build_metrics([
-        #{vhost => <<"/">>, stream => <<"orders">>, role => writer, counters => #{offset => 120, readers => 3}},
-        #{vhost => <<"/">>, stream => <<"payments">>, role => replica, counters => #{offset => 55}}
-    ]),
-    FieldSamples = maps:get(field_samples, Metrics),
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_metrics],
+        fun() ->
+            #{
+                {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
+                    #{offset => 120, readers => 3},
+                {osiris_replica, {resource, <<"/">>, queue, <<"payments">>}} =>
+                    #{offset => 55}
+            }
+        end
+    ),
+    FieldSamples = to_field_samples(Metrics),
     ?assertEqual(
         [
             #{
@@ -99,9 +120,38 @@ reader_metric_present_when_available_test() ->
         maps:get(readers, FieldSamples)
     ).
 
+forced_gc_metric_omitted_test() ->
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_metrics],
+        fun() ->
+            #{
+                {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
+                    #{offset => 120, forced_gc => 7, forced_gcs => 9}
+            }
+        end
+    ),
+    FieldSamples = to_field_samples(Metrics),
+    ?assertEqual(false, maps:is_key(forced_gc, FieldSamples)),
+    ?assertEqual(false, maps:is_key(forced_gcs, FieldSamples)),
+    ?assertEqual(
+        [
+            #{
+                vhost => <<"/">>,
+                stream => <<"orders">>,
+                role => <<"writer">>,
+                value => 120
+            }
+        ],
+        maps:get(offset, FieldSamples)
+    ).
+
 overview_shape_parsing_test() ->
     Pid = self(),
     Resource = {resource, <<"/">>, queue, <<"streamtest">>},
+    ensure_table_deleted(consumer_created),
+    Tab = ets:new(consumer_created, [named_table, public]),
+    ets:insert(Tab, {{Resource, Pid, <<"stream.subid-0">>},
+                     false,false,0,true,up,[{<<"name">>, longstr, <<"stream.subid-0">>}]}),
     Overview = #{
         {osiris_writer, {resource, <<"/">>, queue, <<"streamtest">>}} =>
             #{
@@ -125,10 +175,11 @@ overview_shape_parsing_test() ->
                 chunks => 1
             }
     },
-    ConsumerMap = #{{Resource, Pid} => <<"stream.subid-0">>},
-    RawEntries = seven_stream_metrics_collector:entries_from_overview(Overview, ConsumerMap),
-    Metrics = seven_stream_metrics_collector:build_metrics(RawEntries),
-    FieldSamples = maps:get(field_samples, Metrics),
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_metrics, consumers],
+        fun() -> Overview end
+    ),
+    FieldSamples = to_field_samples(Metrics),
     ?assertEqual(
         sort_samples([
             #{
@@ -181,11 +232,13 @@ overview_shape_parsing_test() ->
                 stream => <<"streamtest">>,
                 consumer => <<"stream.subid-0">>,
                 connection => list_to_binary(erlang:pid_to_list(Pid)),
+                pid => list_to_binary(erlang:pid_to_list(Pid)),
                 value => 42
             }
         ],
         maps:get(consumer_offset, FieldSamples)
-    ).
+    ),
+    ets:delete(Tab).
 
 family_filtering_by_source_tag_test() ->
     Pid = self(),
@@ -194,6 +247,8 @@ family_filtering_by_source_tag_test() ->
             #{
                 offset => 10,
                 committed_offset => 9,
+                epoch => 2,
+                packets => 25,
                 readers => 1
             },
         {osiris_replica, {resource, <<"/">>, queue, <<"stream_b">>}} =>
@@ -206,6 +261,8 @@ family_filtering_by_source_tag_test() ->
                 offset => 11
             }
     },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(connection_created),
     Tab = ets:new(consumer_created, [named_table, public]),
     ConnTab = ets:new(connection_created, [named_table, public]),
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
@@ -217,17 +274,29 @@ family_filtering_by_source_tag_test() ->
         [stream_metrics],
         fun() -> Overview end
     ),
-    StreamFields = maps:get(field_samples, StreamMetrics),
+    StreamFields = to_field_samples(StreamMetrics),
     ?assert(maps:is_key(offset, StreamFields)),
     ?assert(maps:is_key(committed_offset, StreamFields)),
     ?assert(maps:is_key(readers, StreamFields)),
+    ?assertEqual(false, maps:is_key(epoch, StreamFields)),
+    ?assertEqual(false, maps:is_key(packets, StreamFields)),
     ?assertEqual(false, maps:is_key(consumer_offset, StreamFields)),
+
+    StreamMisc = seven_stream_metrics_collector:collect(
+        [stream_misc],
+        fun() -> Overview end
+    ),
+    StreamMiscFields = to_field_samples(StreamMisc),
+    ?assertEqual(
+        [epoch, packets],
+        lists:sort(maps:keys(StreamMiscFields))
+    ),
 
     Consumers = seven_stream_metrics_collector:collect(
         [consumers],
         fun() -> Overview end
     ),
-    ConsumerFields = maps:get(field_samples, Consumers),
+    ConsumerFields = to_field_samples(Consumers),
     ?assertEqual([consumer_offset], maps:keys(ConsumerFields)),
     ?assertEqual(
         [
@@ -236,6 +305,7 @@ family_filtering_by_source_tag_test() ->
                 stream => <<"stream_a">>,
                 consumer => <<"c1">>,
                 connection => <<"conn-a">>,
+                pid => list_to_binary(erlang:pid_to_list(Pid)),
                 value => 11
             }
         ],
@@ -253,6 +323,8 @@ connection_name_fallback_and_truncation_test() ->
                 offset => 11
             }
     },
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(connection_created),
     Tab = ets:new(consumer_created, [named_table, public]),
     ConnTab = ets:new(connection_created, [named_table, public]),
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
@@ -264,12 +336,14 @@ connection_name_fallback_and_truncation_test() ->
         [consumers],
         fun() -> Overview end
     ),
-    [Sample] = maps:get(consumer_offset, maps:get(field_samples, Consumers)),
+    [Sample] = maps:get(consumer_offset, to_field_samples(Consumers)),
     ?assertEqual(binary:part(LongName, 0, 100), maps:get(connection, Sample)),
     ets:delete(ConnTab),
     ets:delete(Tab),
 
     Pid2 = spawn(fun() -> receive after 10 -> ok end end),
+    ensure_table_deleted(consumer_created),
+    ensure_table_deleted(connection_created),
     Tab2 = ets:new(consumer_created, [named_table, public]),
     ConnTab2 = ets:new(connection_created, [named_table, public]),
     ets:insert(Tab2, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid2, <<"stream.subid-1">>},
@@ -285,8 +359,9 @@ connection_name_fallback_and_truncation_test() ->
         [consumers],
         fun() -> Overview2 end
     ),
-    [Sample2] = maps:get(consumer_offset, maps:get(field_samples, Consumers2)),
+    [Sample2] = maps:get(consumer_offset, to_field_samples(Consumers2)),
     ?assertEqual(<<"fallback-name">>, maps:get(connection, Sample2)),
+    ?assertEqual(list_to_binary(erlang:pid_to_list(Pid2)), maps:get(pid, Sample2)),
     ets:delete(ConnTab2),
     ets:delete(Tab2),
     exit(Pid2, kill).
@@ -301,3 +376,16 @@ sort_samples(Samples) ->
         end,
         Samples
     ).
+
+to_field_samples(FieldSamples) when is_list(FieldSamples) ->
+    maps:from_list(FieldSamples);
+to_field_samples(FieldSamples) when is_map(FieldSamples) ->
+    FieldSamples;
+to_field_samples(_) ->
+    #{}.
+
+ensure_table_deleted(Table) ->
+    case ets:info(Table) of
+        undefined -> ok;
+        _ -> ets:delete(Table)
+    end.

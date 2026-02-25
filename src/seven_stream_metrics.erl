@@ -9,24 +9,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1, stop/1, start_link/0, start_link/1]).
+-export([start_link/0, start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("include/seven_stream_metrics.hrl").
 
 -record(state, {dummy}).
 
-start(Name) ->
-    seven_stream_metrics_sup:start_child(Name).
-
-stop(Name) ->
-    gen_server:call(Name, stop).
-
 start_link() ->
-    ?INF("Starting with ~p logging...", [info]),
-    ?DBG("Starting with ~p logging...", [debug]),
-    ?WRN("Starting with ~p logging...", [warning]),
-    ?ERR("Starting with ~p logging...", [error]),
     start_link(?MODULE).
 
 start_link(Name) ->
