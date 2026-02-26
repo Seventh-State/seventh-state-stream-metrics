@@ -32,6 +32,7 @@
     collect/2
 ]).
 
+
 collect(Families) when is_list(Families) ->
     collect(Families, fun get_osiris_overview/0).
 
@@ -91,7 +92,7 @@ overview_item_to_entry(
                 vhost => VHost,
                 stream => Stream,
                 consumer => Consumer,
-                connection => connection_label(Pid),
+                connection_name => connection_label(Pid),
                 pid => pid_to_binary(Pid),
                 protocol => <<"stream">>,
                 counters => ConsumerCountersWithLag
@@ -119,7 +120,7 @@ overview_item_to_entry(
                 vhost => VHost,
                 stream => Stream,
                 consumer => ConsumerTag,
-                connection => connection_label(Pid),
+                connection_name => connection_label(Pid),
                 pid => pid_to_binary(Pid),
                 protocol => <<"amqp">>,
                 counters => ConsumerCountersWithLag
@@ -170,7 +171,7 @@ entry_to_field_samples(
         vhost := VHost,
         stream := Stream,
         consumer := Consumer,
-        connection := Connection,
+        connection_name := Connection,
         pid := Pid,
         protocol := Protocol,
         counters := Counters
@@ -182,7 +183,7 @@ entry_to_field_samples(
         vhost => VHost,
         stream => Stream,
         consumer => Consumer,
-        connection => Connection,
+        connection_name => Connection,
         pid => Pid,
         protocol => Protocol
     },
@@ -278,8 +279,7 @@ lookup_consumer_lag(Families) ->
 
 build_consumer_lag_map() ->
     try
-        Entries = ets:tab2list(rabbit_stream_consumer_created),
-        lists:foldl(
+        ets:foldl(
           fun({{Resource, Pid, _SubscriptionId}, ConsumerData}, Acc) ->
                   case extract_offset_lag(ConsumerData) of
                       {ok, OffsetLag} ->
@@ -289,7 +289,7 @@ build_consumer_lag_map() ->
                   end
           end,
           #{},
-          Entries)
+          rabbit_stream_consumer_created)
     catch
         error:badarg ->
             #{}
@@ -314,14 +314,13 @@ extract_offset_lag(_) ->
 
 build_consumer_map() ->
     try
-        Entries = ets:tab2list(consumer_created),
-        lists:foldl(
+        ets:foldl(
           fun({{{resource, VHost, queue, Stream}, Pid, ConsumerTag}, _F1,_F2,_F3,_F4,_F5, Args}, Acc) ->
                   ConsumerName = consumer_name(ConsumerTag, Args),
                   maps:put({{resource, VHost, queue, Stream}, Pid}, ConsumerName, Acc)
           end,
           #{},
-          Entries)
+          consumer_created)
     catch
         error:badarg ->
             #{}

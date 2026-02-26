@@ -27,7 +27,7 @@ Define the externally observable behavior of the Seventh State Stream Metrics Pl
 - Metric type: `gauge` for all emitted families.
 - Standard labels: `vhost`, `stream`, `role`.
 - `role` allowed values: `writer`, `replica`.
-- Consumer offset metric labels: `vhost`, `stream`, `consumer`, `connection`, `protocol` (skipped if consumer name missing).
+- Consumer offset metric labels: `vhost`, `stream`, `consumer`, `connection_name`, `protocol` (skipped if consumer name missing).
 - Registry: `7s_streams`.
 - Scrape endpoint expectation: `/metrics/7s_streams`.
 - Family filter support via `prometheus_mf_filter`:

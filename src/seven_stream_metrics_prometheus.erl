@@ -48,12 +48,12 @@ collect_metrics(_MetricName, {_Field, Samples}) ->
          maps:get(value, Sample)
      ) || Sample <- Samples].
 
-labels_for_sample(#{consumer := Consumer, connection := Connection, pid := Pid, protocol := Protocol} = Sample) ->
+labels_for_sample(#{consumer := Consumer, connection_name := Connection, pid := Pid, protocol := Protocol} = Sample) ->
     [
         {vhost, maps:get(vhost, Sample)},
         {stream, maps:get(stream, Sample)},
         {consumer, Consumer},
-        {connection, Connection},
+        {connection_name, Connection},
         {pid, Pid},
         {protocol, Protocol}
     ];
