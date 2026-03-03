@@ -3,7 +3,7 @@ PROJECT_DESCRIPTION = Seventh State Stream Metrics Plugin
 PROJECT_MOD         = seven_stream_metrics_app
 PROJECT_VERSION     = 1.0.0
 
-current_rmq_ref     ?= v4.2.x
+current_rmq_ref     ?= v3.13.x
 
 define PROJECT_APP_EXTRA_KEYS
     {broker_version_requirements, []}

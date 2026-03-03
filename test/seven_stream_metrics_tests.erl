@@ -51,7 +51,7 @@ core_functionality_first_use_case() ->
 
 invalid_entry_omitted_test() ->
     Metrics = seven_stream_metrics_collector:collect(
-        [stream_metrics],
+        [stream_metrics, stream_misc],
         fun() ->
             #{
                 {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
@@ -65,7 +65,7 @@ invalid_entry_omitted_test() ->
 
 optional_reader_metric_omission_test() ->
     Metrics = seven_stream_metrics_collector:collect(
-        [stream_metrics],
+        [stream_metrics, stream_misc],
         fun() ->
             #{
                 {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
@@ -120,9 +120,46 @@ reader_metric_present_when_available_test() ->
         maps:get(readers, FieldSamples)
     ).
 
+chunks_metric_exposed_test() ->
+    Metrics = seven_stream_metrics_collector:collect(
+        [stream_misc],
+        fun() ->
+            #{
+                {osiris_writer, {resource, <<"/">>, queue, <<"stream">>}} =>
+                    #{offset => 146566991, chunks => 41618, epoch => 1,
+                      committed_offset => 146562897, readers => 1,
+                      first_offset => 0, first_timestamp => 1771499153044,
+                      segments => 6},
+                {osiris_replica, {resource, <<"/">>, queue, <<"streamtest">>}} =>
+                    #{offset => 1, chunks => 0, epoch => 11,
+                      committed_offset => 1, readers => 0,
+                      first_offset => 0,
+                      first_timestamp => 1771342522224, segments => 1}
+            }
+        end
+    ),
+    FieldSamples = to_field_samples(Metrics),
+    ?assertEqual(
+        sort_samples([
+            #{
+                vhost => <<"/">>,
+                stream => <<"stream">>,
+                role => <<"writer">>,
+                value => 41618
+            },
+            #{
+                vhost => <<"/">>,
+                stream => <<"streamtest">>,
+                role => <<"replica">>,
+                value => 0
+            }
+        ]),
+        sort_samples(maps:get(chunks, FieldSamples))
+    ).
+
 forced_gc_metric_omitted_test() ->
     Metrics = seven_stream_metrics_collector:collect(
-        [stream_metrics],
+        [stream_metrics, stream_misc],
         fun() ->
             #{
                 {osiris_writer, {resource, <<"/">>, queue, <<"orders">>}} =>
@@ -181,7 +218,7 @@ overview_shape_parsing_test() ->
                 }
     },
     Metrics = seven_stream_metrics_collector:collect(
-        [stream_metrics, consumers],
+        [stream_metrics, stream_misc, consumers],
         fun() -> Overview end
     ),
     FieldSamples = to_field_samples(Metrics),
@@ -236,7 +273,7 @@ overview_shape_parsing_test() ->
                 vhost => <<"/">>,
                 stream => <<"streamtest">>,
                 consumer => <<"stream.subid-0">>,
-                connection => list_to_binary(erlang:pid_to_list(Pid)),
+                connection_name => list_to_binary(erlang:pid_to_list(Pid)),
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
                 protocol => <<"stream">>,
                 value => 42
@@ -245,13 +282,24 @@ overview_shape_parsing_test() ->
                 vhost => <<"/">>,
                 stream => <<"streamtest">>,
                 consumer => <<"amq.ctag-1">>,
-                connection => list_to_binary(erlang:pid_to_list(Pid)),
+                connection_name => list_to_binary(erlang:pid_to_list(Pid)),
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
                 protocol => <<"amqp">>,
                 value => 99
             }
         ]),
         sort_samples(maps:get(consumer_offset, FieldSamples))
+    ),
+    ?assertEqual(
+        sort_samples([
+            #{
+                vhost => <<"/">>,
+                stream => <<"streamtest">>,
+                role => <<"writer">>,
+                value => 1
+            }
+        ]),
+        sort_samples(maps:get(chunks, FieldSamples))
     ),
     ets:delete(Tab).
 
@@ -294,7 +342,7 @@ family_filtering_by_source_tag_test() ->
         fun() -> Overview end
     ),
     StreamFields = to_field_samples(StreamMetrics),
-    ?assert(maps:is_key(offset, StreamFields)),
+    ?assertEqual(false, maps:is_key(offset, StreamFields)),
     ?assert(maps:is_key(committed_offset, StreamFields)),
     ?assert(maps:is_key(readers, StreamFields)),
     ?assertEqual(false, maps:is_key(epoch, StreamFields)),
@@ -307,7 +355,7 @@ family_filtering_by_source_tag_test() ->
     ),
     StreamMiscFields = to_field_samples(StreamMisc),
     ?assertEqual(
-        [epoch, packets],
+        [epoch, offset, packets],
         lists:sort(maps:keys(StreamMiscFields))
     ),
 
@@ -323,7 +371,7 @@ family_filtering_by_source_tag_test() ->
                 vhost => <<"/">>,
                 stream => <<"stream_a">>,
                 consumer => <<"c1">>,
-                connection => <<"conn-a">>,
+                connection_name => <<"conn-a">>,
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
                 protocol => <<"stream">>,
                 value => 11
@@ -332,7 +380,7 @@ family_filtering_by_source_tag_test() ->
                 vhost => <<"/">>,
                 stream => <<"stream_a">>,
                 consumer => <<"amq.ctag-a">>,
-                connection => <<"conn-a">>,
+                connection_name => <<"conn-a">>,
                 pid => list_to_binary(erlang:pid_to_list(Pid)),
                 protocol => <<"amqp">>,
                 value => 12
@@ -366,7 +414,7 @@ connection_name_fallback_and_truncation_test() ->
         fun() -> Overview end
     ),
     [Sample] = maps:get(consumer_offset, to_field_samples(Consumers)),
-    ?assertEqual(binary:part(LongName, 0, 100), maps:get(connection, Sample)),
+    ?assertEqual(binary:part(LongName, 0, 100), maps:get(connection_name, Sample)),
     ?assertEqual(<<"stream">>, maps:get(protocol, Sample)),
     ets:delete(ConnTab),
     ets:delete(Tab),
@@ -390,7 +438,7 @@ connection_name_fallback_and_truncation_test() ->
         fun() -> Overview2 end
     ),
     [Sample2] = maps:get(consumer_offset, to_field_samples(Consumers2)),
-    ?assertEqual(<<"fallback-name">>, maps:get(connection, Sample2)),
+    ?assertEqual(<<"fallback-name">>, maps:get(connection_name, Sample2)),
     ?assertEqual(list_to_binary(erlang:pid_to_list(Pid2)), maps:get(pid, Sample2)),
     ?assertEqual(<<"stream">>, maps:get(protocol, Sample2)),
     ets:delete(ConnTab2),
@@ -437,34 +485,34 @@ consumer_offset_lag_metric_extraction_test() ->
     Tab = ets:new(consumer_created, [named_table, public]),
     ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
     ConnTab = ets:new(connection_created, [named_table, public]),
-    
+
     % Insert stream reader consumer with offset_lag
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
                      false,false,0,true,up,[{<<"name">>, longstr, <<"reader-c1">>}]}),
     ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
                              [{offset_lag, 1000}]}),
-    
+
     % Insert AMQP consumer with offset_lag
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"amq.ctag-1">>},
                      false,false,0,true,up,[{<<"name">>, longstr, <<"queue-c1">>}]}),
     ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"amq.ctag-1">>},
                              [{offset_lag, 2000}]}),
     ets:insert(ConnTab, {Pid, [{user_provided_name, <<"test-conn">>}]}),
-    
+
     Metrics = seven_stream_metrics_collector:collect(
         [consumer_lag],
         fun() -> Overview end
     ),
     Samples = sort_samples(maps:get(consumer_offset_lag, to_field_samples(Metrics))),
     ?assertEqual(2, length(Samples)),
-    
+
     [Sample1, Sample2] = Samples,
-    ?assertEqual(2000, maps:get(value, Sample1)),
-    ?assertEqual(<<"amqp">>, maps:get(protocol, Sample1)),
-    
-    ?assertEqual(1000, maps:get(value, Sample2)),
-    ?assertEqual(<<"stream">>, maps:get(protocol, Sample2)),
-    
+    ?assertEqual(1000, maps:get(value, Sample1)),
+    ?assertEqual(<<"stream">>, maps:get(protocol, Sample1)),
+
+    ?assertEqual(2000, maps:get(value, Sample2)),
+    ?assertEqual(<<"amqp">>, maps:get(protocol, Sample2)),
+
     ets:delete(ConnTab),
     ets:delete(ConsumerTab),
     ets:delete(Tab).
@@ -505,19 +553,19 @@ consumer_lag_with_invalid_offset_lag_values_test() ->
     ensure_table_deleted(rabbit_stream_consumer_created),
     Tab = ets:new(consumer_created, [named_table, public]),
     ConsumerTab = ets:new(rabbit_stream_consumer_created, [named_table, public]),
-    
+
     % Valid offset_lag
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, <<"stream.subid-0">>},
                      false,false,0,true,up,[{<<"name">>, longstr, <<"c1">>}]}),
     ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_a">>}, Pid, 0},
                              [{offset_lag, 500}]}),
-    
+
     % Invalid offset_lag values (should be omitted)
     ets:insert(Tab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, <<"stream.subid-1">>},
                      false,false,0,true,up,[{<<"name">>, longstr, <<"c2">>}]}),
     ets:insert(ConsumerTab, {{{resource, <<"/">>, queue, <<"stream_b">>}, Pid, 1},
                              [{offset_lag, <<"not_integer">>}]}),
-    
+
     Metrics = seven_stream_metrics_collector:collect(
         [consumer_lag],
         fun() -> Overview end
@@ -526,7 +574,7 @@ consumer_lag_with_invalid_offset_lag_values_test() ->
     ?assertEqual(1, length(Samples)),
     [Sample] = Samples,
     ?assertEqual(500, maps:get(value, Sample)),
-    
+
     ets:delete(ConsumerTab),
     ets:delete(Tab).
 
@@ -536,7 +584,17 @@ consumer_lag_with_invalid_offset_lag_values_test() ->
 sort_samples(Samples) ->
     lists:sort(
         fun(A, B) ->
-            maps:get(stream, A) =< maps:get(stream, B)
+            StreamA = maps:get(stream, A),
+            StreamB = maps:get(stream, B),
+            case StreamA of
+                StreamB ->
+                    % Secondary sort by consumer when streams are equal
+                    ConsumerA = maps:get(consumer, A, <<"">>),
+                    ConsumerB = maps:get(consumer, B, <<"">>),
+                    ConsumerA =< ConsumerB;
+                _ ->
+                    StreamA =< StreamB
+            end
         end,
         Samples
     ).

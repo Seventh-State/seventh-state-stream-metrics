@@ -31,7 +31,8 @@ Define the externally observable behavior of the Seventh State Stream Metrics Pl
 - Registry: `7s_streams`.
 - Scrape endpoint expectation: `/metrics/7s_streams`.
 - Family filter support via `prometheus_mf_filter`:
-  - `stream_metrics`: emits `offset`, `committed_offset`, `readers`
+  - `stream_metrics`: emits `committed_offset`, `readers`, `first_offset`, `first_timestamp`, `segments`
+  - `stream_misc`: emits `offset`, `epoch`, `packets`
   - `consumers`: emits `consumer_offset` for `rabbit_stream_reader` and `rabbit_stream_queue`
 
 Known fields that may appear (when present and valid in source data):

@@ -4,9 +4,9 @@
 
 -define(EXCLUDED_COUNTER_FIELDS, [forced_gcs]).
 -define(STREAM_METRICS_FIELDS,
-        [offset, first_offset, first_timestamp, committed_offset, segments, readers]).
+    [first_offset, first_timestamp, committed_offset, segments, readers]).
 -define(CONSUMERS_FIELDS, [consumer_offset, consumer_offset_lag]).
--define(STREAM_MISC_FIELDS, [packets, epoch]).
+-define(STREAM_MISC_FIELDS, [offset, packets, epoch, chunks]).
 
 -type osiris_resource() :: {resource, binary(), queue, binary()}.
 -type osiris_role_key() :: {osiris_writer | osiris_replica, osiris_resource()}.
@@ -276,6 +276,7 @@ lookup_consumer_lag(Families) ->
         false ->
             #{}
     end.
+
 
 build_consumer_lag_map() ->
     try

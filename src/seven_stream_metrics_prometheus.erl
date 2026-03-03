@@ -25,8 +25,12 @@ get_requested_families() ->
         _ -> []
     end.
 
+
+
+
 collect_mf(_Registry, Callback) ->
     FieldSamples = seven_stream_metrics_collector:collect(get_requested_families()),
+    FieldSamplesWithIdentity = FieldSamples#{identity_info => [get_identity_info_sample()]},
     maps:foreach(
         fun(Field, FieldData) ->
             MetricName = metric_name(Field),
@@ -39,8 +43,20 @@ collect_mf(_Registry, Callback) ->
             ),
             Callback(MF)
         end,
-        FieldSamples
+        FieldSamplesWithIdentity
     ).
+
+get_identity_info_sample() ->
+    Node = atom_to_binary(node(), utf8),
+    ClusterName = rabbit_nodes:cluster_name(),
+    ClusterId = rabbit_nodes:persistent_cluster_id(),
+    #{
+        value => 1,
+        rabbitmq_node => Node,
+        rabbitmq_cluster => ClusterName,
+        rabbitmq_cluster_permanent_id => ClusterId,
+        rabbitmq_endpoint => <<"7s_streams">>
+    }.
 
 collect_metrics(_MetricName, {_Field, Samples}) ->
     [prometheus_model_helpers:gauge_metric(
@@ -56,6 +72,14 @@ labels_for_sample(#{consumer := Consumer, connection_name := Connection, pid := 
         {connection_name, Connection},
         {pid, Pid},
         {protocol, Protocol}
+    ];
+labels_for_sample(#{rabbitmq_node := Node, rabbitmq_cluster := Cluster,
+                     rabbitmq_cluster_permanent_id := ClusterId, rabbitmq_endpoint := Endpoint}) ->
+    [
+        {rabbitmq_node, Node},
+        {rabbitmq_cluster, Cluster},
+        {rabbitmq_cluster_permanent_id, ClusterId},
+        {rabbitmq_endpoint, Endpoint}
     ];
 labels_for_sample(Sample) ->
     [
@@ -74,6 +98,8 @@ metric_name(consumer_offset) -> <<"seventh_state_stream_local_consumer_offset">>
 metric_name(consumer_offset_lag) -> <<"seventh_state_stream_local_consumer_offset_lag">>;
 metric_name(packets) -> <<"seventh_state_stream_local_packets">>;
 metric_name(epoch) -> <<"seventh_state_stream_local_epoch">>;
+metric_name(chunks) -> <<"seventh_state_stream_local_chunks">>;
+metric_name(identity_info) -> <<"seventh_state_stream_metrics_identity_info">>;
 metric_name(Field) when is_atom(Field) ->
     <<?METRIC_PREFIX/binary, (atom_to_binary(Field, utf8))/binary>>;
 metric_name(_) ->
@@ -89,6 +115,8 @@ metric_help(consumer_offset) -> <<"Local stream counter field from osiris_counte
 metric_help(consumer_offset_lag) -> <<"Consumer offset lag from rabbit_stream_consumer_created ETS table.">>;
 metric_help(packets) -> <<"Local stream counter field from osiris_counters:overview(): packets.">>;
 metric_help(epoch) -> <<"Local stream counter field from osiris_counters:overview(): epoch.">>;
+metric_help(chunks) -> <<"Local stream counter field from osiris_counters:overview(): chunks.">>;
+metric_help(identity_info) -> <<"RabbitMQ cluster and node identity information.">>;
 metric_help(Field) when is_atom(Field) ->
     <<"Local stream counter field from osiris_counters:overview(): ",
       (atom_to_binary(Field, utf8))/binary,

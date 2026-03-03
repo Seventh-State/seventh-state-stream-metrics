@@ -55,31 +55,46 @@ end_per_testcase(TestCase, Config) ->
     rabbit_ct_helpers:testcase_finished(Config1, TestCase).
 
 stream_local_metric_families_present_test(Config) ->
-    Path = "/metrics/7s_streams?family=stream_metrics",
+        MetricsPath = "/metrics/7s_streams?family=stream_metrics",
+        MiscPath = "/metrics/7s_streams?family=stream_misc",
     Stream = ?config(test_stream, Config),
     RetryFun =
         fun() ->
-            case prometheus_get(Config, 0, Path) of
-                {ok, _Headers, Body} ->
+                        case prometheus_get(Config, 0, MetricsPath) of
+                                {ok, _Headers, MetricsBody} ->
                     try
                         require_metric_family(
-                          Body, "seventh_state_stream_local_offset", missing_offset_family),
-                        require_metric_family(
-                          Body,
+                                                    MetricsBody,
                           "seventh_state_stream_local_committed_offset",
                           missing_committed_offset_family),
                         has_numeric_stream_sample(
-                          Body, "seventh_state_stream_local_offset", Stream, missing_offset_sample),
-                        has_numeric_stream_sample(
-                          Body,
+                                                    MetricsBody,
                           "seventh_state_stream_local_committed_offset",
                           Stream,
                           missing_committed_offset_sample),
                         no_metric_family(
-                          Body,
-                          "seventh_state_stream_local_consumer_offset",
-                          unexpected_consumer_offset_family),
-                        ok
+                            MetricsBody,
+                            "seventh_state_stream_local_offset",
+                            unexpected_offset_family_in_metrics),
+                        no_metric_family(
+                            MetricsBody,
+                            "seventh_state_stream_local_consumer_offset",
+                            unexpected_consumer_offset_family),
+                        case prometheus_get(Config, 0, MiscPath) of
+                                {ok, _MiscHeaders, MiscBody} ->
+                                        require_metric_family(
+                                            MiscBody,
+                                            "seventh_state_stream_local_offset",
+                                            missing_offset_family),
+                                        has_numeric_stream_sample(
+                                            MiscBody,
+                                            "seventh_state_stream_local_offset",
+                                            Stream,
+                                            missing_offset_sample),
+                                        ok;
+                                {error, MiscReason} ->
+                                        {error, MiscReason}
+                        end
                     catch
                         error:Reason ->
                             {error, Reason}
@@ -102,7 +117,7 @@ writer_and_replica_samples_exist_test(Config) ->
     Stream = ?config(test_stream, Config),
     RetryFun =
         fun() ->
-            Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=stream_metrics"),
+            Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=stream_misc"),
             HasWriter = has_numeric_stream_role_sample(
                           Body, "seventh_state_stream_local_offset", Stream, "writer"),
             HasReplica = has_numeric_stream_role_sample(
@@ -187,6 +202,9 @@ amqp_consumer_offset_test(Config) ->
 consumer_offset_lag_test(Config) ->
     Stream = ?config(test_stream, Config),
     Ch = rabbit_ct_client_helpers:open_channel(Config, 0),
+
+    %% Stream queues require prefetch count to be set for AMQP consumers
+    #'basic.qos_ok'{} = amqp_channel:call(Ch, #'basic.qos'{prefetch_count = 10}),
 
     %% Create a stream consumer with a name
     #'basic.consume_ok'{} = amqp_channel:subscribe(
