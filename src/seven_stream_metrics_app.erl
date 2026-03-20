@@ -1,6 +1,6 @@
 %%% @author Seventh State <contact@seventhstate.io>
 %%% @copyright (C) 2025, Seventh State
-%%% @doc 
+%%% @doc
 %%%
 %%% @end
 %%% Created : 17 Jul 2025 by Seventh State <contact@seventhstate.io>
@@ -35,11 +35,17 @@ stop(_State) ->
     _ = seven_stream_metrics_prometheus:unregister_collector(),
     ok.
 
+%% Note: rabbit_plugins:is_enabled/1 does not exist on RabbitMQ 3.13.7 and earlier
 ensure_prometheus_plugin_enabled() ->
-    case rabbit_plugins:is_enabled(rabbitmq_prometheus) of
+    try
+        rabbit_plugins:is_enabled(rabbitmq_prometheus)
+    of
         true ->
             ok;
         false ->
-            ?ERR("Required plugin rabbitmq_prometheus is not enabled.", []),
             {error, {missing_required_plugin, rabbitmq_prometheus}}
+    catch
+        error:undef ->
+            %% is_enabled/1 not available (RabbitMQ 3.13.7 or earlier), assume prometheus is enabled
+            ok
     end.
