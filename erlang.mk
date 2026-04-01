@@ -18,7 +18,7 @@ ERLANG_MK_FILENAME := $(realpath $(lastword $(MAKEFILE_LIST)))
 export ERLANG_MK_FILENAME
 
 ERLANG_MK_VERSION = e13b4c7
-ERLANG_MK_WITHOUT = 
+ERLANG_MK_WITHOUT =
 
 # Make 3.81 and 3.82 are deprecated.
 
@@ -1913,7 +1913,7 @@ define dep_autopatch_mix.erl
 			ok
 	end, Deps),
 	case lists:member(elixir_make, proplists:get_value(compilers, Project, [])) of
-		false -> 
+		false ->
 			ok;
 		true ->
 			Write("# https://hexdocs.pm/elixir_make/Mix.Tasks.Compile.ElixirMake.html\n"),
