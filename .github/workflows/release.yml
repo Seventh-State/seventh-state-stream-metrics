@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-release:
-    uses: ./.github/workflows/test-and-build.yml
+    uses: ./.github/workflows/test-and-build-plugin.yml
     secrets: inherit
 
   publish-release:
@@ -27,6 +27,13 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.tar
+            artifacts/**/*.msi
+            artifacts/**/*.tar.gz
+            artifacts/**/*.ez
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

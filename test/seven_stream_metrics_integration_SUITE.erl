@@ -42,6 +42,7 @@ init_per_testcase(TestCase, Config) ->
                 Config2,
                 rabbit_ct_broker_helpers:setup_steps() ++
                 rabbit_ct_client_helpers:setup_steps()),
+    [ok = rabbit_ct_broker_helpers:enable_plugin(Config3, N, "rabbitmq_stream") || N <- lists:seq(0, 2)],
     Stream = stream_name(TestCase),
     ok = create_stream_queue(Config3, Stream),
     ok = publish_messages(Config3, Stream, 50),
@@ -201,38 +202,32 @@ amqp_consumer_offset_test(Config) ->
 
 consumer_offset_lag_test(Config) ->
     Stream = ?config(test_stream, Config),
-    Ch = rabbit_ct_client_helpers:open_channel(Config, 0),
+    {ok, Sock, C0} = stream_test_utils:connect(Config, 0),
+    SubscriptionId = 99,
+    Props = #{<<"name">> => <<"lag-test-consumer">>},
+    try
+        {ok, _C1} = stream_test_utils:subscribe(Sock, C0, Stream, SubscriptionId, 1, Props),
+        ok = stream_test_utils:credit(Sock, SubscriptionId, 1),
+        RetryFun =
+            fun() ->
+                Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=consumer_lag"),
+                case has_numeric_consumer_stream_sample(
+                       Body, "seventh_state_stream_local_consumer_offset_lag", Stream) of
+                    true -> ok;
+                    false -> {error, consumer_offset_lag_not_found, Body}
+                end
+            end,
 
-    %% Stream queues require prefetch count to be set for AMQP consumers
-    #'basic.qos_ok'{} = amqp_channel:call(Ch, #'basic.qos'{prefetch_count = 10}),
-
-    %% Create a stream consumer with a name
-    #'basic.consume_ok'{} = amqp_channel:subscribe(
-        Ch,
-        #'basic.consume'{queue = Stream,
-                         consumer_tag = <<"stream-lag-consumer">>,
-                         arguments = [{<<"name">>, longstr, <<"lag-test-consumer">>}]},
-        self()),
-
-    RetryFun =
-        fun() ->
-            Body = scrape_all_nodes(Config, "/metrics/7s_streams?family=consumer_lag"),
-            case has_numeric_consumer_stream_sample(
-                   Body, "seventh_state_stream_local_consumer_offset_lag", Stream) of
-                true -> ok;
-                false -> {error, consumer_offset_lag_not_found}
-            end
-        end,
-
-    case assert_eventually(RetryFun, 30000, 1000) of
-        ok ->
-            #'basic.cancel_ok'{} = amqp_channel:call(
-              Ch, #'basic.cancel'{consumer_tag = <<"stream-lag-consumer">>}),
-            ok;
-        {error, Reason} ->
-            _ = catch amqp_channel:call(
-              Ch, #'basic.cancel'{consumer_tag = <<"stream-lag-consumer">>}),
-            ct:fail("Consumer offset lag metric not found: ~p", [Reason])
+        case assert_eventually(RetryFun, 30000, 1000) of
+            ok ->
+                ok;
+            {error, Reason} ->
+                ct:fail("Consumer offset lag metric not found: ~p", [Reason])
+        end
+    after
+        _ = catch stream_test_utils:unsubscribe(Sock, C0, SubscriptionId),
+        _ = catch stream_test_utils:close(Sock, C0),
+        ok
     end.
 
 readers_present_test(Config) ->
@@ -314,11 +309,11 @@ assert_eventually_loop(Fun, Deadline, IntervalMs, LastError) ->
     case Fun() of
         ok ->
             ok;
-        {error, Reason} ->
+        Tuple when element(1, Tuple) =:= error ->
             Now = erlang:monotonic_time(millisecond),
             case Now >= Deadline of
                 true ->
-                    {error, Reason};
+                    {error, Tuple};
                 false ->
                     timer:sleep(IntervalMs),
                     assert_eventually_loop(Fun, Deadline, IntervalMs, LastError)

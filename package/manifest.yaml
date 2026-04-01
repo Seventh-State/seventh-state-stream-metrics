@@ -6,7 +6,6 @@ artifact: ../plugins/seventh_state_stream_metrics-1.0.0.ez
 
 rabbitmq:
   # Minimum RabbitMQ version this plugin/overlay supports
-  min: "4.2.x"
+  min: "4.2.0"
   # Maximum RabbitMQ version this plugin/overlay supports
-  max: "4.2.x"
-
+  max: "4.2.14"
