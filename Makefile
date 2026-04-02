@@ -48,4 +48,4 @@ MANIFEST = package/manifest.yaml
 package: fw
 	@echo "Building packages using Seventh-State framework..."
 	rm -rf $(PWD)/dist/*
-	$(MAKE) -C src/extension-framework build-linux build-ez MANIFEST=$(PWD)/$(MANIFEST) OUTPUT_DIR=$(PWD)/dist
+	$(MAKE) -C src/extension-framework build-linux build-docker build-ez MANIFEST=$(PWD)/$(MANIFEST) OUTPUT_DIR=$(PWD)/dist
