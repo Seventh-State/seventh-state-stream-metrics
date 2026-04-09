@@ -9,9 +9,10 @@ Expose local RabbitMQ stream counters as Prometheus metrics, with a dedicated re
 
 ## Download and Install
 
-1. Go to the GitHub **Releases** page for this repository and download the `.ez` file that matches your RabbitMQ version.
-2. Copy the `.ez` file into your RabbitMQ plugins directory.
-3. Enable Prometheus and this plugin:
+1. Go to the GitHub **Releases** page for this repository and download the `.ez` file or package that matches your RabbitMQ version.
+2. If you've chosen a package then install it according to your package manager.
+3. Otherwise copy the `.ez` file into your RabbitMQ plugins directory.
+4. Enable Prometheus and this plugin:
 
 ```bash
 rabbitmq-plugins enable rabbitmq_prometheus
@@ -87,3 +88,7 @@ If you have many streams and/or many consumers, this plugin will emit a large nu
 ## Contributing
 
 Contributions are welcome. If you find a bug or want additional metrics, open an issue or send a pull request. Please include tests for behavior changes when possible.
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See the `LICENSE` file for details.
