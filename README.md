@@ -9,7 +9,7 @@ Expose local RabbitMQ stream counters as Prometheus metrics, with a dedicated re
 
 ## Download and Install
 
-1. Go to the GitHub **Releases** page for this repository and download the `.ez` file or package that matches your RabbitMQ version.
+1. Go to the [GitHub **Releases**](https://github.com/Seventh-State/seventh-state-stream-metrics/releases) page for this repository and download the `.ez` file or package that matches your RabbitMQ version.
 2. If you've chosen a package then install it according to your package manager.
 3. Otherwise copy the `.ez` file into your RabbitMQ plugins directory.
 4. Enable Prometheus and this plugin:
