@@ -34,7 +34,7 @@ rabbitmq-plugins directories
 
 All metrics are gauges and follow the naming rule `seventh_state_stream_local_<field>`.
 
-Use the query parameter `family` to configure which metric families you want to collect. For example: `/metrics/7s_stream?family=stream_metrics`. 
+Use the query parameter `family` to configure which metric families you want to collect. For example: `/metrics/7s_streams?family=stream_metrics`. 
 
 ### stream_metrics
 
